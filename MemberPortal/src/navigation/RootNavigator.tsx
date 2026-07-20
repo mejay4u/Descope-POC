@@ -31,7 +31,7 @@ function AuthNavigator() {
       <AuthStack.Screen
         name="Register"
         component={RegisterScreen}
-        options={{ title: '', headerBackTitle: 'Back' }}
+        options={{ headerShown: false }}
       />
       <AuthStack.Screen
         name="Passkey"

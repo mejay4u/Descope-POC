@@ -15,7 +15,9 @@ import MethodTile from '../components/MethodTile';
 import AppleIcon from '../components/icons/AppleIcon';
 import MicrosoftIcon from '../components/icons/MicrosoftIcon';
 import GoogleIcon from '../components/icons/GoogleIcon';
+import FacebookIcon from '../components/icons/FacebookIcon';
 import MagicLinkIcon from '../components/icons/MagicLinkIcon';
+import WhatsAppIcon from '../components/icons/WhatsAppIcon';
 import PasskeyIcon from '../components/icons/PasskeyIcon';
 import { useAuth, type SocialProvider } from '../auth/useAuth';
 import { useAuthDeepLink } from '../auth/useAuthDeepLink';
@@ -179,10 +181,23 @@ export default function RegisterScreen({ navigation }: Props) {
               disabled={!!method}
             />
             <MethodTile
+              icon={<FacebookIcon size={18} />}
+              label="Facebook"
+              onPress={() => onSocial('facebook')}
+              loading={method === 'facebook'}
+              disabled={!!method}
+            />
+            <MethodTile
               icon={<MagicLinkIcon size={18} color={colors.brand} />}
               label="Magic Link"
               onPress={onMagicLink}
               loading={method === 'magiclink'}
+              disabled={!!method}
+            />
+            <MethodTile
+              icon={<WhatsAppIcon size={18} />}
+              label="WhatsApp"
+              onPress={() => navigation.navigate('WhatsApp')}
               disabled={!!method}
             />
           </View>

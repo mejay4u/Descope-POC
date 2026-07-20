@@ -3,6 +3,7 @@ export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
   Passkey: { mode: 'signin' | 'signup' } | undefined;
+  WhatsApp: undefined;
 };
 
 export type AppStackParamList = {

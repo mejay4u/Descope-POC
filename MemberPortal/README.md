@@ -11,9 +11,10 @@ directly to Descope's hosted service using your Project ID.
 | **Welcome screen** with *Sign In* / *Create Account* buttons | `src/screens/WelcomeScreen.tsx` |
 | **Register** (email + password) | `descope.password.signUp` |
 | **Login** (email + password) | `descope.password.signIn` |
-| **Social login** — Apple, Microsoft, Google | `descope.oauth.start` → browser → deep link → `descope.oauth.exchange` |
+| **Social login** — Apple, Microsoft, Google, Facebook | `descope.oauth.start` → browser → deep link → `descope.oauth.exchange` |
 | **Magic link** (email) | `descope.magicLink.signIn/signUp.email` → email → deep link → `descope.magicLink.verify` |
-| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Refresh token stored in the Keychain/Keystore behind biometrics (`react-native-keychain`), then `descope.refresh`. The app **asks** before enabling it (never silently) after any successful sign-in. |
+| **WhatsApp one-time code** | `descope.otp.signUpOrIn.whatsapp` → code sent over WhatsApp → `descope.otp.verify.whatsapp` (`src/screens/WhatsAppScreen.tsx`) |
+| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Refresh token stored in the Keychain/Keystore behind biometrics (`react-native-keychain`), then `descope.refresh`. The app **asks** before enabling it (never silently) after any successful sign-in. Also offered as its own tile on the Login screen once enabled. |
 | **Passkeys** (WebAuthn) | Runs a Descope **Flow** in `FlowView` (native passkey ceremony) |
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, sign out |
 
@@ -32,7 +33,7 @@ src/
     useAuthDeepLink.ts     # completes social + magic link sign-in from the redirect deep link
     biometricStore.ts      # biometric-gated Keychain storage of the refresh token
   navigation/              # RootNavigator + route types
-  screens/                 # Welcome, Login, Register, Passkey, Portal
+  screens/                 # Welcome, Login, Register, Passkey, WhatsApp, Portal
 App.tsx                    # wraps everything in Descope's <AuthProvider>
 ```
 
@@ -52,10 +53,12 @@ App.tsx                    # wraps everything in Descope's <AuthProvider>
    ```ts
    export const DESCOPE_PROJECT_ID = 'P2xxxxxxxxxxxxxxxxxxxxxxxx';
    ```
-3. In the Descope Console → **Authentication Methods**, enable **Passwords**
-   and **Magic Link**.
+3. In the Descope Console → **Authentication Methods**, enable **Passwords**,
+   **Magic Link**, and **OTP** (with the **WhatsApp** delivery method turned on
+   — this requires a WhatsApp Business sender configured in the Console).
 4. In **Authentication Methods → Social**, configure the **Apple**, **Microsoft**,
-   and **Google** OAuth providers (client IDs/secrets from each provider).
+   **Google**, and **Facebook** OAuth providers (client IDs/secrets from each
+   provider).
 
 ## 3. Install & run
 
@@ -113,13 +116,24 @@ Passkeys / WebAuthn).
   `useAuthDeepLink` exchanges the `code` and sets the session.
 - **Magic link** → `signInWithMagicLink` / `signUpWithMagicLink` emails a link;
   on return `useAuthDeepLink` verifies the `t` token and sets the session.
+- **WhatsApp** → `WhatsAppScreen` collects a phone number, sends a code via
+  `sendWhatsAppOtp`, then `verifyWhatsAppOtp` exchanges the entered code for a
+  session.
 - **Biometric** → after any successful sign-in the app *asks* (native confirm
   dialog, never silent) whether to save the refresh token behind biometrics.
-  The Welcome screen then shows *Sign in with Face ID/Fingerprint*, which reads
-  it (OS prompt) and calls `descope.refresh`.
+  The Welcome screen and the Login screen's method grid then show a biometric
+  option, which reads the token (OS prompt) and calls `descope.refresh`.
 - **Passkey** → the *Sign in / Register with a passkey* buttons open
   `PasskeyScreen`, which runs the passkey Flow and calls `manageSession` on
   success.
+
+### Troubleshooting: biometric enrollment doesn't "stick"
+`enableBiometricLogin` does **not** require `SECURITY_LEVEL.SECURE_HARDWARE`
+(no Secure Enclave) — the iOS Simulator and some older devices don't have one,
+which used to make the Keychain write throw and silently fail. If you're
+testing Face ID in the **Simulator**, you also need to turn it on yourself:
+**Features → Face ID → Enrolled**, then approve prompts via **Features → Face
+ID → Matching Face**.
 
 ## Notes & limitations
 

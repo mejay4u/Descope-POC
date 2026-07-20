@@ -81,7 +81,7 @@ export default function WelcomeScreen({ navigation }: Props) {
 
         <AppButton
           label="Sign in with a passkey"
-          variant="ghost"
+          variant="secondary"
           icon={<PasskeyIcon size={18} color={colors.brand} />}
           onPress={() => navigation.navigate('Passkey', { mode: 'signin' })}
           style={bioAvailable ? styles.actionSpacing : undefined}
@@ -90,7 +90,7 @@ export default function WelcomeScreen({ navigation }: Props) {
         {bioAvailable && (
           <AppButton
             label={`Sign in with ${bioName}`}
-            variant="ghost"
+            variant="secondary"
             icon={<FingerprintIcon size={18} color={colors.brand} />}
             onPress={onBiometric}
             loading={busy}

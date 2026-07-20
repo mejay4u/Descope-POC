@@ -16,13 +16,14 @@ import {
 
 export type AuthResult = { ok: true } | { ok: false; error: string };
 
-export type SocialProvider = 'apple' | 'microsoft' | 'google';
+export type SocialProvider = 'apple' | 'microsoft' | 'google' | 'facebook';
 
 // Descope OAuth provider ids.
 const PROVIDER_ID: Record<SocialProvider, string> = {
   apple: 'apple',
   microsoft: 'microsoft',
   google: 'google',
+  facebook: 'facebook',
 };
 
 export function messageFor(e: unknown, fallback: string): string {
@@ -150,6 +151,49 @@ export function useAuth() {
     [descope],
   );
 
+  /**
+   * WhatsApp one-time code. Sends a code via `otp.signUpOrIn` (works for both
+   * new and returning members), then `verifyWhatsAppOtp` exchanges the code
+   * the user enters for a session.
+   */
+  const sendWhatsAppOtp = useCallback(
+    async (phone: string): Promise<AuthResult> => {
+      try {
+        const resp = await descope.otp.signUpOrIn.whatsapp(phone);
+        if (!resp.ok) {
+          return {
+            ok: false,
+            error: resp.error?.errorDescription ?? 'Could not send WhatsApp code.',
+          };
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: messageFor(e, 'Could not send WhatsApp code.') };
+      }
+    },
+    [descope],
+  );
+
+  const verifyWhatsAppOtp = useCallback(
+    async (phone: string, code: string): Promise<AuthResult> => {
+      try {
+        const resp = await descope.otp.verify.whatsapp(phone, code);
+        if (!resp.ok || !resp.data) {
+          return {
+            ok: false,
+            error: resp.error?.errorDescription ?? 'Invalid code. Please try again.',
+          };
+        }
+        await manageSession(resp.data);
+        await promptEnableBiometricLogin(resp.data.refreshJwt);
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: messageFor(e, 'Invalid code. Please try again.') };
+      }
+    },
+    [descope, manageSession],
+  );
+
   /** Sign in using the biometric-protected refresh token. */
   const signInWithBiometrics = useCallback(async (): Promise<AuthResult> => {
     try {
@@ -189,6 +233,8 @@ export function useAuth() {
     signInWithOAuth,
     signInWithMagicLink,
     signUpWithMagicLink,
+    sendWhatsAppOtp,
+    verifyWhatsAppOtp,
     signInWithBiometrics,
     signOut,
   };

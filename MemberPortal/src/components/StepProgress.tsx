@@ -5,11 +5,14 @@ import { colors, spacing } from '../theme';
 type Props = {
   current: number; // 1-indexed
   total: number;
-  label: string;
+  /** Omit to render dots only, with no "Step X of N" caption below them. */
+  label?: string;
+  /** Use on a colored (e.g. navy) background instead of the app's light surfaces. */
+  onDark?: boolean;
 };
 
 /** A compact dot-and-line progress indicator for multi-step wizards. */
-export default function StepProgress({ current, total, label }: Props) {
+export default function StepProgress({ current, total, label, onDark }: Props) {
   return (
     <View style={styles.wrap}>
       <View style={styles.row}>
@@ -18,19 +21,28 @@ export default function StepProgress({ current, total, label }: Props) {
             <View
               style={[
                 styles.dot,
-                step < current && styles.dotDone,
-                step === current && styles.dotCurrent,
+                onDark && styles.dotOnDark,
+                step < current && (onDark ? styles.dotDoneOnDark : styles.dotDone),
+                step === current && (onDark ? styles.dotDoneOnDark : styles.dotCurrent),
               ]}
             />
             {step < total && (
-              <View style={[styles.line, step < current && styles.lineDone]} />
+              <View
+                style={[
+                  styles.line,
+                  onDark && styles.lineOnDark,
+                  step < current && (onDark ? styles.lineDoneOnDark : styles.lineDone),
+                ]}
+              />
             )}
           </React.Fragment>
         ))}
       </View>
-      <Text style={styles.label}>
-        Step {current} of {total} · {label}
-      </Text>
+      {!!label && (
+        <Text style={[styles.label, onDark && styles.labelOnDark]}>
+          Step {current} of {total} · {label}
+        </Text>
+      )}
     </View>
   );
 }
@@ -44,6 +56,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: colors.border,
   },
+  dotOnDark: { backgroundColor: 'rgba(255,255,255,0.35)' },
   dotCurrent: {
     width: 12,
     height: 12,
@@ -51,7 +64,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand,
   },
   dotDone: { backgroundColor: colors.brand },
+  dotDoneOnDark: { backgroundColor: colors.white },
   line: { flex: 1, height: 2, backgroundColor: colors.border, marginHorizontal: 4 },
+  lineOnDark: { backgroundColor: 'rgba(255,255,255,0.35)' },
   lineDone: { backgroundColor: colors.brand },
+  lineDoneOnDark: { backgroundColor: colors.white },
   label: { marginTop: spacing.sm, color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  labelOnDark: { color: 'rgba(255,255,255,0.85)' },
 });

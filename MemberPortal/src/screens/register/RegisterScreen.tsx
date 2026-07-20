@@ -1,19 +1,14 @@
 import React, { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { JWTResponse } from '@descope/core-js-sdk';
 import Banner from '../../components/Banner';
-import StepProgress from '../../components/StepProgress';
 import { useAuth } from '../../auth/useAuth';
 import { colors, spacing } from '../../theme';
 import type { AuthStackParamList } from '../../navigation/types';
-import { EMPTY_FORM, STEP_INDEX, STEP_LABEL, TOTAL_STEPS, type FormState, type Step } from './types';
+import { EMPTY_FORM, type FormState, type Step } from './types';
+import WizardHeader from './WizardHeader';
 import PersonalInfoStep from './PersonalInfoStep';
 import VerifyEmailStep from './VerifyEmailStep';
 import ReviewInfoStep from './ReviewInfoStep';
@@ -21,6 +16,13 @@ import SetPasswordStep from './SetPasswordStep';
 import SuccessStep from './SuccessStep';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
+
+/** Which step the header's back button lands on; absent means "leave the wizard". */
+const PREVIOUS_STEP: Partial<Record<Step, Step>> = {
+  verify: 'personal',
+  review: 'verify',
+  password: 'review',
+};
 
 /**
  * A 5-step registration wizard: Personal Info -> Verify Email -> Review ->
@@ -90,16 +92,28 @@ export default function RegisterScreen({ navigation }: Props) {
     }
   };
 
+  const onHeaderBack = () => {
+    setError(null);
+    const previous = PREVIOUS_STEP[step];
+    if (previous) {
+      setStep(previous);
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const showHeader = step !== 'success';
+
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView
+      style={styles.safe}
+      edges={showHeader ? ['bottom', 'left', 'right'] : ['top', 'bottom', 'left', 'right']}>
+      {showHeader && <WizardHeader step={step} onBack={onHeaderBack} />}
+
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {step !== 'success' && (
-            <StepProgress current={STEP_INDEX[step]} total={TOTAL_STEPS} label={STEP_LABEL[step]} />
-          )}
-
           {!!error && <Banner variant="error">{error}</Banner>}
 
           {step === 'personal' && (

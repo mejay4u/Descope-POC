@@ -12,6 +12,8 @@ import { colors, radius, spacing, typography } from '../theme';
 type Props = TextInputProps & {
   label: string;
   errorText?: string;
+  /** An icon/button rendered inside the field's right edge, e.g. a password-visibility toggle. */
+  rightElement?: React.ReactNode;
 };
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
@@ -20,6 +22,7 @@ export default function TextField({
   label,
   errorText,
   style,
+  rightElement,
   onFocus,
   onBlur,
   ...rest
@@ -58,13 +61,21 @@ export default function TextField({
   return (
     <View style={styles.wrap}>
       <Text style={styles.label}>{label}</Text>
-      <AnimatedTextInput
-        placeholderTextColor={colors.textMuted}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        style={[styles.input, { borderColor }, style]}
-        {...rest}
-      />
+      <View style={styles.inputRow}>
+        <AnimatedTextInput
+          placeholderTextColor={colors.textMuted}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          style={[
+            styles.input,
+            { borderColor },
+            !!rightElement && styles.inputWithRightElement,
+            style,
+          ]}
+          {...rest}
+        />
+        {!!rightElement && <View style={styles.rightElement}>{rightElement}</View>}
+      </View>
       {!!errorText && <Text style={styles.error}>{errorText}</Text>}
     </View>
   );
@@ -73,6 +84,7 @@ export default function TextField({
 const styles = StyleSheet.create({
   wrap: { marginBottom: spacing.md },
   label: { ...typography.label, marginBottom: spacing.xs },
+  inputRow: { justifyContent: 'center' },
   input: {
     height: 52,
     borderWidth: 1.5,
@@ -82,6 +94,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
     backgroundColor: colors.surface,
+  },
+  inputWithRightElement: { paddingRight: spacing.xl + spacing.md },
+  rightElement: {
+    position: 'absolute',
+    right: spacing.md,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   error: { color: colors.danger, fontSize: 13, marginTop: spacing.xs },
 });

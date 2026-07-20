@@ -6,8 +6,6 @@ import { useSession } from '@descope/react-native-sdk';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/register/RegisterScreen';
-import PasskeyScreen from '../screens/PasskeyScreen';
-import WhatsAppScreen from '../screens/WhatsAppScreen';
 import PortalScreen from '../screens/PortalScreen';
 import { colors } from '../theme';
 import type { AppStackParamList, AuthStackParamList } from './types';
@@ -32,16 +30,6 @@ function AuthNavigator() {
         name="Register"
         component={RegisterScreen}
         options={{ headerShown: false }}
-      />
-      <AuthStack.Screen
-        name="Passkey"
-        component={PasskeyScreen}
-        options={{ title: 'Passkey', headerBackTitle: 'Back' }}
-      />
-      <AuthStack.Screen
-        name="WhatsApp"
-        component={WhatsAppScreen}
-        options={{ title: 'WhatsApp', headerBackTitle: 'Back' }}
       />
     </AuthStack.Navigator>
   );

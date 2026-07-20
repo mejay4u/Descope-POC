@@ -13,22 +13,14 @@
 export const DESCOPE_PROJECT_ID = 'YOUR_DESCOPE_PROJECT_ID';
 
 /**
- * Custom URL scheme used as the redirect target for both OAuth (social) and
- * magic link sign-in, so the browser / email client can hand control back to
- * the app after the user authenticates. Must match the scheme registered in:
+ * Custom URL scheme used as the redirect target for the password-reset email,
+ * so the browser can hand control back to the app afterward. Must match the
+ * scheme registered in:
  *   - iOS:      ios/MemberPortal/Info.plist (CFBundleURLSchemes)
  *   - Android:  android/app/src/main/AndroidManifest.xml (intent-filter)
  */
 export const AUTH_REDIRECT_SCHEME = 'memberportal';
 export const AUTH_REDIRECT_URL = `${AUTH_REDIRECT_SCHEME}://auth`;
-
-/**
- * The Descope Flow ID that runs the passkey (WebAuthn) journey.
- * Configure this flow in the Descope Flow editor and enable "Passkeys".
- * Passkeys also require Associated Domains (iOS) / assetlinks.json (Android) —
- * see the README "Passkeys setup" section.
- */
-export const PASSKEY_FLOW_ID = 'sign-up-or-in';
 
 export function assertConfigured(): void {
   if (DESCOPE_PROJECT_ID === 'YOUR_DESCOPE_PROJECT_ID') {

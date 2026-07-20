@@ -31,8 +31,13 @@ const PREVIOUS_STEP: Partial<Record<Step, Step>> = {
  * the full data-flow writeup.
  */
 export default function RegisterScreen({ navigation }: Props) {
-  const { startRegistration, verifyRegistrationCode, completeRegistration, finishRegistration } =
-    useAuth();
+  const {
+    startRegistration,
+    verifyRegistrationCode,
+    resendRegistrationCode,
+    completeRegistration,
+    finishRegistration,
+  } = useAuth();
 
   const [step, setStep] = useState<Step>('personal');
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -130,7 +135,7 @@ export default function RegisterScreen({ navigation }: Props) {
             <VerifyEmailStep
               email={form.email}
               verifyCode={verifyRegistrationCode}
-              resend={() => startRegistrationRequest(form)}
+              resend={() => resendRegistrationCode(form.email.trim())}
               onVerified={onVerified}
               onError={setError}
             />

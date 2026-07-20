@@ -3,6 +3,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 import type { JWTResponse } from '@descope/core-js-sdk';
 import AppButton from '../../components/AppButton';
 import type { AuthResult, VerifyResult } from '../../auth/useAuth';
+import { maskEmail } from '../../utils/maskEmail';
 import { colors, radius, spacing } from '../../theme';
 import { sharedStyles } from './styles';
 
@@ -77,8 +78,8 @@ export default function VerifyEmailStep({ email, verifyCode, resend, onVerified,
     <View>
       <Text style={sharedStyles.title}>Check your email</Text>
       <Text style={sharedStyles.subtitle}>
-        We sent a {CODE_LENGTH}-digit code to {email}. Check your spam folder if you don't see
-        it.
+        We sent a {CODE_LENGTH}-digit code to {maskEmail(email)}. Check your spam folder if you
+        don't see it.
       </Text>
 
       <View style={styles.codeRow}>

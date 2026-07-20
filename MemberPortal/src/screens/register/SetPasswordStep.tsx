@@ -18,8 +18,8 @@ export default function SetPasswordStep({ email, onCreateAccount, busy }: Props)
 
   const rules = [
     {
-      label: 'Must be between 14 and 56 characters',
-      valid: password.length >= 14 && password.length <= 56,
+      label: 'Must be between 8 and 20 characters',
+      valid: password.length >= 8 && password.length <= 20,
     },
     { label: 'At least one uppercase letter (A–Z)', valid: /[A-Z]/.test(password) },
     { label: 'At least one numeric digit (0–9)', valid: /[0-9]/.test(password) },
@@ -46,6 +46,7 @@ export default function SetPasswordStep({ email, onCreateAccount, busy }: Props)
         onChangeText={setPassword}
         secureTextEntry
         textContentType="newPassword"
+        maxLength={20}
       />
       <TextField
         label="Confirm password"
@@ -54,6 +55,7 @@ export default function SetPasswordStep({ email, onCreateAccount, busy }: Props)
         onChangeText={setConfirmPassword}
         secureTextEntry
         textContentType="newPassword"
+        maxLength={20}
         errorText={
           confirmPassword.length > 0 && !passwordsMatch ? "Passwords don't match" : undefined
         }

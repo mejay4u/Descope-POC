@@ -14,6 +14,7 @@ import { useDescopeService } from '../services/useDescopeService';
 import type { RegistrationDetails, ServiceResult, VerifyResult } from '../services/descopeService';
 import {
   disableBiometricLogin,
+  enableBiometricLogin,
   getBiometricRefreshToken,
   promptEnableBiometricLogin,
 } from './biometricStore';
@@ -94,6 +95,12 @@ export function useAuth() {
       return result;
     }
     await manageSession(result.jwt);
+    // Descope may rotate the refresh token on every `refresh` call — re-save
+    // it so the next biometric sign-in uses a still-valid token instead of
+    // the one that was just consumed.
+    if (result.jwt.refreshJwt) {
+      await enableBiometricLogin(result.jwt.refreshJwt).catch(() => {});
+    }
     return { ok: true };
   }, [service, manageSession]);
 

@@ -99,7 +99,13 @@ export function biometryLabel(type: Keychain.BIOMETRY_TYPE | null): string {
 /**
  * After a successful sign-in, ask the user — never silently — whether they'd
  * like to enable biometric sign-in for next time. No-ops if biometry isn't
- * supported on the device or is already enabled.
+ * supported on the device.
+ *
+ * If biometric sign-in is already enabled, this silently re-saves the fresh
+ * refresh token instead of re-prompting. Descope issues a new refresh token
+ * on every sign-in (and rotates it on every `refresh` call), so without this
+ * the Keychain-stored token goes stale after the first use and biometric
+ * sign-in starts failing with "Your saved sign-in expired."
  */
 export async function promptEnableBiometricLogin(refreshJwt?: string): Promise<void> {
   if (!refreshJwt) {
@@ -110,7 +116,13 @@ export async function promptEnableBiometricLogin(refreshJwt?: string): Promise<v
       getSupportedBiometry(),
       hasBiometricLogin(),
     ]);
-    if (!supported || alreadyEnabled) {
+    if (!supported) {
+      return;
+    }
+    if (alreadyEnabled) {
+      await enableBiometricLogin(refreshJwt).catch(() => {
+        // Non-fatal: the stale token just won't be refreshed this time.
+      });
       return;
     }
     const label = biometryLabel(supported);

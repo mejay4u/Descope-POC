@@ -106,6 +106,9 @@ export default function RegisterScreen({ navigation }: Props) {
       setError(res.error);
       return;
     }
+    // Setting the password returns a fresh session (the OTP-verify one is now
+    // invalidated) — hold it so onFinish applies a valid session.
+    setJwt(res.jwt);
     setStep('success');
   };
 

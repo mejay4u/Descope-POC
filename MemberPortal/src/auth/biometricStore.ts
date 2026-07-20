@@ -17,13 +17,20 @@ import * as Keychain from 'react-native-keychain';
 const SERVICE = 'com.memberportal.descope.biometric';
 const ACCOUNT = 'descope-refresh-jwt';
 
-/** Persist the refresh JWT behind a biometric lock. */
+/**
+ * Persist the refresh JWT behind a biometric lock.
+ *
+ * Note: this deliberately does NOT force `SECURITY_LEVEL.SECURE_HARDWARE` —
+ * simulators (and some older devices) have no Secure Enclave, so requiring it
+ * makes this call throw and silently fail to save anything. Requiring
+ * biometric auth via `ACCESS_CONTROL.BIOMETRY_ANY` is enough of a guarantee
+ * here; the OS still uses hardware backing when it's available.
+ */
 export async function enableBiometricLogin(refreshJwt: string): Promise<void> {
   await Keychain.setGenericPassword(ACCOUNT, refreshJwt, {
     service: SERVICE,
     accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY,
     accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    securityLevel: Keychain.SECURITY_LEVEL.SECURE_HARDWARE,
   });
 }
 
@@ -116,7 +123,10 @@ export async function promptEnableBiometricLogin(refreshJwt?: string): Promise<v
           text: 'Enable',
           onPress: () => {
             enableBiometricLogin(refreshJwt).catch(() => {
-              // Non-fatal: the user can enable it later from the portal.
+              Alert.alert(
+                'Could not enable biometrics',
+                'Something went wrong turning on biometric sign-in on this device. You can try again from the portal settings.',
+              );
             });
           },
         },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -15,26 +15,44 @@ import MethodTile from '../components/MethodTile';
 import AppleIcon from '../components/icons/AppleIcon';
 import MicrosoftIcon from '../components/icons/MicrosoftIcon';
 import GoogleIcon from '../components/icons/GoogleIcon';
+import FacebookIcon from '../components/icons/FacebookIcon';
 import MagicLinkIcon from '../components/icons/MagicLinkIcon';
+import WhatsAppIcon from '../components/icons/WhatsAppIcon';
 import PasskeyIcon from '../components/icons/PasskeyIcon';
+import FingerprintIcon from '../components/icons/FingerprintIcon';
 import { useAuth, type SocialProvider } from '../auth/useAuth';
 import { useAuthDeepLink } from '../auth/useAuthDeepLink';
+import { biometryLabel, getSupportedBiometry, hasBiometricLogin } from '../auth/biometricStore';
 import { colors, spacing, typography } from '../theme';
 import type { AuthStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
-type Method = SocialProvider | 'magiclink';
+type Method = SocialProvider | 'magiclink' | 'biometric';
 
 export default function LoginScreen({ navigation }: Props) {
-  const { signInWithEmail, signInWithOAuth, signInWithMagicLink } = useAuth();
+  const { signInWithEmail, signInWithOAuth, signInWithMagicLink, signInWithBiometrics } =
+    useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [method, setMethod] = useState<Method | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioName, setBioName] = useState('Biometrics');
 
   useAuthDeepLink({ onError: setError });
+
+  useEffect(() => {
+    (async () => {
+      const [enrolled, supported] = await Promise.all([
+        hasBiometricLogin(),
+        getSupportedBiometry(),
+      ]);
+      setBioAvailable(enrolled && !!supported);
+      setBioName(biometryLabel(supported));
+    })();
+  }, []);
 
   const onSubmit = async () => {
     setError(null);
@@ -77,6 +95,18 @@ export default function LoginScreen({ navigation }: Props) {
       setError(res.error);
     } else {
       setMagicLinkSent(true);
+    }
+  };
+
+  const onBiometric = async () => {
+    setError(null);
+    setMagicLinkSent(false);
+    setMethod('biometric');
+    const res = await signInWithBiometrics();
+    setMethod(null);
+    if (!res.ok) {
+      setError(res.error);
+      setBioAvailable(await hasBiometricLogin());
     }
   };
 
@@ -157,12 +187,34 @@ export default function LoginScreen({ navigation }: Props) {
               disabled={!!method}
             />
             <MethodTile
+              icon={<FacebookIcon size={18} />}
+              label="Facebook"
+              onPress={() => onSocial('facebook')}
+              loading={method === 'facebook'}
+              disabled={!!method}
+            />
+            <MethodTile
               icon={<MagicLinkIcon size={18} color={colors.brand} />}
               label="Magic Link"
               onPress={onMagicLink}
               loading={method === 'magiclink'}
               disabled={!!method}
             />
+            <MethodTile
+              icon={<WhatsAppIcon size={18} />}
+              label="WhatsApp"
+              onPress={() => navigation.navigate('WhatsApp')}
+              disabled={!!method}
+            />
+            {bioAvailable && (
+              <MethodTile
+                icon={<FingerprintIcon size={18} color={colors.brand} />}
+                label={bioName}
+                onPress={onBiometric}
+                loading={method === 'biometric'}
+                disabled={!!method}
+              />
+            )}
           </View>
 
           <AppButton

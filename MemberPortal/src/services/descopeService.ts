@@ -196,20 +196,34 @@ export function createDescopeService(sdk: DescopeSdk) {
       email: string,
       password: string,
       refreshJwt: string,
-    ): Promise<ServiceResult> {
+    ): Promise<VerifyResult> {
       try {
         // `password.update` authenticates the account operation with the
         // user's REFRESH token (same as me/logout/refresh) — NOT the session
         // JWT. Passing the session token here fails with the generic
         // "Password update failed".
-        const resp = await sdk.password.update(email, password, refreshJwt);
-        if (!resp.ok) {
+        const updateResp = await sdk.password.update(email, password, refreshJwt);
+        if (!updateResp.ok) {
           return {
             ok: false,
-            error: resp.error?.errorDescription ?? 'Could not set your password.',
+            error: updateResp.error?.errorDescription ?? 'Could not set your password.',
           };
         }
-        return { ok: true };
+        // Setting the password invalidates the OTP-verify session tokens
+        // (a password change revokes existing sessions), so those tokens are
+        // now dead — reusing them for the Portal session or biometric
+        // enrollment would fail later. Sign in with the just-set password to
+        // get a fresh, guaranteed-valid session to return to the caller.
+        const signInResp = await sdk.password.signIn(email, password);
+        if (!signInResp.ok || !signInResp.data) {
+          return {
+            ok: false,
+            error:
+              signInResp.error?.errorDescription ??
+              'Your account was created — please sign in.',
+          };
+        }
+        return { ok: true, jwt: signInResp.data };
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Could not set your password.') };
       }

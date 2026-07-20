@@ -79,13 +79,19 @@ export function useAuth() {
     [service],
   );
 
+  /**
+   * Sets the account's password and returns a FRESH session (from a
+   * password sign-in) — the OTP-verify token passed in is only used to
+   * authorize the password update, and is invalidated by it. See
+   * descopeService.completeRegistration.
+   */
   const completeRegistration = useCallback(
-    (email: string, password: string, sessionJwt: string) =>
-      service.completeRegistration(email, password, sessionJwt),
+    (email: string, password: string, refreshJwt: string) =>
+      service.completeRegistration(email, password, refreshJwt),
     [service],
   );
 
-  /** Applies the session held since email verification, once the wizard is done. */
+  /** Applies the fresh session from completeRegistration, once the wizard is done. */
   const finishRegistration = useCallback(
     async (jwt: JWTResponse): Promise<void> => {
       await manageSession(jwt);

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -12,26 +11,34 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import TextField from '../components/TextField';
 import AppButton from '../components/AppButton';
-import SocialButton, { type SocialProvider } from '../components/SocialButton';
-import { useAuth } from '../auth/useAuth';
-import { useOAuthDeepLink } from '../auth/useOAuthDeepLink';
+import MethodTile from '../components/MethodTile';
+import AppleIcon from '../components/icons/AppleIcon';
+import MicrosoftIcon from '../components/icons/MicrosoftIcon';
+import GoogleIcon from '../components/icons/GoogleIcon';
+import MagicLinkIcon from '../components/icons/MagicLinkIcon';
+import PasskeyIcon from '../components/icons/PasskeyIcon';
+import { useAuth, type SocialProvider } from '../auth/useAuth';
+import { useAuthDeepLink } from '../auth/useAuthDeepLink';
 import { colors, spacing, typography } from '../theme';
 import type { AuthStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
+type Method = SocialProvider | 'magiclink';
 
 export default function LoginScreen({ navigation }: Props) {
-  const { signInWithEmail, signInWithOAuth } = useAuth();
+  const { signInWithEmail, signInWithOAuth, signInWithMagicLink } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [social, setSocial] = useState<SocialProvider | null>(null);
+  const [method, setMethod] = useState<Method | null>(null);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
-  useOAuthDeepLink({ onError: setError });
+  useAuthDeepLink({ onError: setError });
 
   const onSubmit = async () => {
     setError(null);
+    setMagicLinkSent(false);
     if (!email.trim() || !password) {
       setError('Please enter your email and password.');
       return;
@@ -47,11 +54,29 @@ export default function LoginScreen({ navigation }: Props) {
 
   const onSocial = async (provider: SocialProvider) => {
     setError(null);
-    setSocial(provider);
+    setMagicLinkSent(false);
+    setMethod(provider);
     const res = await signInWithOAuth(provider);
-    setSocial(null);
+    setMethod(null);
     if (!res.ok) {
       setError(res.error);
+    }
+  };
+
+  const onMagicLink = async () => {
+    setError(null);
+    setMagicLinkSent(false);
+    if (!email.trim()) {
+      setError('Enter your email above to receive a magic link.');
+      return;
+    }
+    setMethod('magiclink');
+    const res = await signInWithMagicLink(email.trim());
+    setMethod(null);
+    if (!res.ok) {
+      setError(res.error);
+    } else {
+      setMagicLinkSent(true);
     }
   };
 
@@ -69,6 +94,14 @@ export default function LoginScreen({ navigation }: Props) {
           {!!error && (
             <View style={styles.banner}>
               <Text style={styles.bannerText}>{error}</Text>
+            </View>
+          )}
+
+          {magicLinkSent && (
+            <View style={styles.successBanner}>
+              <Text style={styles.successText}>
+                Magic link sent — check {email.trim()} to finish signing in.
+              </Text>
             </View>
           )}
 
@@ -93,12 +126,6 @@ export default function LoginScreen({ navigation }: Props) {
             />
 
             <AppButton label="Sign In" onPress={onSubmit} loading={busy} />
-
-            <Pressable
-              style={styles.passkeyLink}
-              onPress={() => navigation.navigate('Passkey', { mode: 'signin' })}>
-              <Text style={styles.passkeyText}>Sign in with a passkey</Text>
-            </Pressable>
           </View>
 
           <View style={styles.dividerRow}>
@@ -107,30 +134,53 @@ export default function LoginScreen({ navigation }: Props) {
             <View style={styles.line} />
           </View>
 
-          <SocialButton
-            provider="apple"
-            onPress={onSocial}
-            loading={social === 'apple'}
-            disabled={!!social}
-          />
-          <SocialButton
-            provider="microsoft"
-            onPress={onSocial}
-            loading={social === 'microsoft'}
-            disabled={!!social}
-          />
-          <SocialButton
-            provider="google"
-            onPress={onSocial}
-            loading={social === 'google'}
-            disabled={!!social}
+          <View style={styles.methodGrid}>
+            <MethodTile
+              icon={<AppleIcon size={18} color={colors.text} />}
+              label="Apple"
+              onPress={() => onSocial('apple')}
+              loading={method === 'apple'}
+              disabled={!!method}
+            />
+            <MethodTile
+              icon={<GoogleIcon size={18} />}
+              label="Google"
+              onPress={() => onSocial('google')}
+              loading={method === 'google'}
+              disabled={!!method}
+            />
+            <MethodTile
+              icon={<MicrosoftIcon size={18} />}
+              label="Microsoft"
+              onPress={() => onSocial('microsoft')}
+              loading={method === 'microsoft'}
+              disabled={!!method}
+            />
+            <MethodTile
+              icon={<MagicLinkIcon size={18} color={colors.brand} />}
+              label="Magic Link"
+              onPress={onMagicLink}
+              loading={method === 'magiclink'}
+              disabled={!!method}
+            />
+          </View>
+
+          <AppButton
+            label="Sign in with a passkey"
+            variant="secondary"
+            icon={<PasskeyIcon size={18} color={colors.brand} />}
+            onPress={() => navigation.navigate('Passkey', { mode: 'signin' })}
+            disabled={!!method}
+            style={styles.passkeyButton}
           />
 
           <View style={styles.footerRow}>
             <Text style={styles.footerText}>New here? </Text>
-            <Pressable onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.footerLink}>Create an account</Text>
-            </Pressable>
+            <Text
+              style={styles.footerLink}
+              onPress={() => navigation.navigate('Register')}>
+              Create an account
+            </Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -153,9 +203,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   bannerText: { color: colors.danger, fontSize: 14 },
+  successBanner: {
+    backgroundColor: colors.brandSoft,
+    borderColor: colors.brand,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  successText: { color: colors.brandDark, fontSize: 14, fontWeight: '600' },
   form: { marginBottom: spacing.md },
-  passkeyLink: { alignSelf: 'center', paddingVertical: spacing.md },
-  passkeyText: { color: colors.brand, fontWeight: '600', fontSize: 15 },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -163,6 +220,12 @@ const styles = StyleSheet.create({
   },
   line: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { marginHorizontal: spacing.sm, color: colors.textMuted, fontSize: 13 },
+  methodGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  passkeyButton: { marginTop: spacing.xs, marginBottom: spacing.md },
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',

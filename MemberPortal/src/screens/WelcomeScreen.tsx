@@ -7,6 +7,8 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import AppButton from '../components/AppButton';
+import PasskeyIcon from '../components/icons/PasskeyIcon';
+import FingerprintIcon from '../components/icons/FingerprintIcon';
 import { useAuth } from '../auth/useAuth';
 import {
   biometryLabel,
@@ -62,24 +64,37 @@ export default function WelcomeScreen({ navigation }: Props) {
           label="Sign In"
           onPress={() => navigation.navigate('Login')}
           variant="primary"
+          style={styles.actionSpacing}
         />
-        <View style={{ height: spacing.sm }} />
         <AppButton
           label="Create Account"
           onPress={() => navigation.navigate('Register')}
           variant="secondary"
+          style={styles.actionSpacing}
+        />
+
+        <View style={styles.dividerRow}>
+          <View style={styles.line} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.line} />
+        </View>
+
+        <AppButton
+          label="Sign in with a passkey"
+          variant="ghost"
+          icon={<PasskeyIcon size={18} color={colors.brand} />}
+          onPress={() => navigation.navigate('Passkey', { mode: 'signin' })}
+          style={bioAvailable ? styles.actionSpacing : undefined}
         />
 
         {bioAvailable && (
-          <>
-            <View style={{ height: spacing.md }} />
-            <AppButton
-              label={`Sign in with ${bioName}`}
-              onPress={onBiometric}
-              variant="ghost"
-              loading={busy}
-            />
-          </>
+          <AppButton
+            label={`Sign in with ${bioName}`}
+            variant="ghost"
+            icon={<FingerprintIcon size={18} color={colors.brand} />}
+            onPress={onBiometric}
+            loading={busy}
+          />
         )}
       </View>
 
@@ -101,6 +116,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.lg,
+    shadowColor: colors.brand,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 6,
   },
   logoMark: { color: colors.white, fontSize: 44, fontWeight: '800' },
   title: { ...typography.title, textAlign: 'center' },
@@ -111,6 +131,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   actions: { paddingBottom: spacing.md },
+  actionSpacing: { marginBottom: spacing.sm },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.sm,
+  },
+  line: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { marginHorizontal: spacing.sm, color: colors.textMuted, fontSize: 13 },
   footer: {
     textAlign: 'center',
     color: colors.textMuted,

@@ -12,8 +12,8 @@ import {
   useHostedFlowUrl,
   useSession,
 } from '@descope/react-native-sdk';
-import { enableBiometricLogin } from '../auth/biometricStore';
-import { OAUTH_REDIRECT_URL, PASSKEY_FLOW_ID } from '../config';
+import { promptEnableBiometricLogin } from '../auth/biometricStore';
+import { AUTH_REDIRECT_URL, PASSKEY_FLOW_ID } from '../config';
 import { colors, spacing, typography } from '../theme';
 import type { AuthStackParamList } from '../navigation/types';
 
@@ -58,15 +58,13 @@ export default function PasskeyScreen({ navigation, route }: Props) {
             url: flowUrl,
             iosOAuthNativeProvider: 'apple',
             androidOAuthNativeProvider: 'google',
-            oauthRedirectCustomScheme: OAUTH_REDIRECT_URL,
+            oauthRedirectCustomScheme: AUTH_REDIRECT_URL,
           }}
           onReady={() => setReady(true)}
           onSuccess={async jwtResponse => {
             try {
               await manageSession(jwtResponse);
-              if (jwtResponse.refreshJwt) {
-                await enableBiometricLogin(jwtResponse.refreshJwt);
-              }
+              await promptEnableBiometricLogin(jwtResponse.refreshJwt);
               // Session listener in App.tsx swaps to the Portal automatically.
             } catch {
               setError('Could not complete passkey sign-in.');

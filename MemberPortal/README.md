@@ -12,7 +12,8 @@ directly to Descope's hosted service using your Project ID.
 | **Register** (email + password) | `descope.password.signUp` |
 | **Login** (email + password) | `descope.password.signIn` |
 | **Social login** — Apple, Microsoft, Google | `descope.oauth.start` → browser → deep link → `descope.oauth.exchange` |
-| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Refresh token stored in the Keychain/Keystore behind biometrics (`react-native-keychain`), then `descope.refresh` |
+| **Magic link** (email) | `descope.magicLink.signIn/signUp.email` → email → deep link → `descope.magicLink.verify` |
+| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Refresh token stored in the Keychain/Keystore behind biometrics (`react-native-keychain`), then `descope.refresh`. The app **asks** before enabling it (never silently) after any successful sign-in. |
 | **Passkeys** (WebAuthn) | Runs a Descope **Flow** in `FlowView` (native passkey ceremony) |
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, sign out |
 
@@ -23,12 +24,12 @@ exists the app shows the Portal, otherwise the Welcome/Login/Register flow.
 
 ```
 src/
-  config/index.ts          # Descope Project ID, OAuth scheme, passkey flow ID
+  config/index.ts          # Descope Project ID, auth redirect scheme, passkey flow ID
   theme/                   # colors, spacing, typography
-  components/              # AppButton, TextField, SocialButton
+  components/              # AppButton, TextField, MethodTile, icons/
   auth/
-    useAuth.ts             # register / login / social / biometric / logout
-    useOAuthDeepLink.ts    # completes social sign-in from the redirect deep link
+    useAuth.ts             # register / login / social / magic link / biometric / logout
+    useAuthDeepLink.ts     # completes social + magic link sign-in from the redirect deep link
     biometricStore.ts      # biometric-gated Keychain storage of the refresh token
   navigation/              # RootNavigator + route types
   screens/                 # Welcome, Login, Register, Passkey, Portal
@@ -51,7 +52,8 @@ App.tsx                    # wraps everything in Descope's <AuthProvider>
    ```ts
    export const DESCOPE_PROJECT_ID = 'P2xxxxxxxxxxxxxxxxxxxxxxxx';
    ```
-3. In the Descope Console → **Authentication Methods**, enable **Passwords**.
+3. In the Descope Console → **Authentication Methods**, enable **Passwords**
+   and **Magic Link**.
 4. In **Authentication Methods → Social**, configure the **Apple**, **Microsoft**,
    and **Google** OAuth providers (client IDs/secrets from each provider).
 
@@ -72,10 +74,10 @@ npm run ios
 
 These are already set in this repo — listed so you know what powers each feature.
 
-### Social login redirect (deep link)
-Social sign-in opens the provider in the browser and returns to the app via the
-custom scheme **`memberportal://auth`** (see `OAUTH_REDIRECT_URL` in
-`src/config/index.ts`).
+### Social + magic link redirect (deep link)
+Social sign-in opens the provider in the browser, and magic link sign-in opens
+the emailed link; both return to the app via the same custom scheme
+**`memberportal://auth`** (see `AUTH_REDIRECT_URL` in `src/config/index.ts`).
 
 - **iOS** — `ios/MemberPortal/Info.plist` registers the `memberportal` URL scheme,
   and `ios/MemberPortal/AppDelegate.swift` forwards the URL to `RCTLinkingManager`.
@@ -83,7 +85,7 @@ custom scheme **`memberportal://auth`** (see `OAUTH_REDIRECT_URL` in
   intent-filter for `memberportal://auth` on a `singleTask` MainActivity.
 
 > In the Descope Console, add `memberportal://auth` to the project's list of
-> **approved redirect URLs** for OAuth.
+> **approved redirect URLs** for both OAuth and Magic Link.
 
 ### Biometrics
 - **iOS** — `NSFaceIDUsageDescription` is set in `Info.plist`.
@@ -108,12 +110,16 @@ Passkeys / WebAuthn).
 - **Email/password** → `useAuth().signUpWithEmail` / `signInWithEmail` →
   `manageSession(resp.data)` sets the active session → app shows the Portal.
 - **Social** → `signInWithOAuth(provider)` opens the browser; on return
-  `useOAuthDeepLink` exchanges the `code` and sets the session.
-- **Biometric** → after any successful login the refresh token is saved behind
-  biometrics; the Welcome screen shows *Sign in with Face ID/Fingerprint*, which
-  reads it (OS prompt) and calls `descope.refresh`.
-- **Passkey** → the *Sign in / Register with a passkey* links open `PasskeyScreen`,
-  which runs the passkey Flow and calls `manageSession` on success.
+  `useAuthDeepLink` exchanges the `code` and sets the session.
+- **Magic link** → `signInWithMagicLink` / `signUpWithMagicLink` emails a link;
+  on return `useAuthDeepLink` verifies the `t` token and sets the session.
+- **Biometric** → after any successful sign-in the app *asks* (native confirm
+  dialog, never silent) whether to save the refresh token behind biometrics.
+  The Welcome screen then shows *Sign in with Face ID/Fingerprint*, which reads
+  it (OS prompt) and calls `descope.refresh`.
+- **Passkey** → the *Sign in / Register with a passkey* buttons open
+  `PasskeyScreen`, which runs the passkey Flow and calls `manageSession` on
+  success.
 
 ## Notes & limitations
 

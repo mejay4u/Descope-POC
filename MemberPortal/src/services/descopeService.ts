@@ -195,10 +195,14 @@ export function createDescopeService(sdk: DescopeSdk) {
     async completeRegistration(
       email: string,
       password: string,
-      sessionJwt: string,
+      refreshJwt: string,
     ): Promise<ServiceResult> {
       try {
-        const resp = await sdk.password.update(email, password, sessionJwt);
+        // `password.update` authenticates the account operation with the
+        // user's REFRESH token (same as me/logout/refresh) — NOT the session
+        // JWT. Passing the session token here fails with the generic
+        // "Password update failed".
+        const resp = await sdk.password.update(email, password, refreshJwt);
         if (!resp.ok) {
           return {
             ok: false,

@@ -5,7 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSession } from '@descope/react-native-sdk';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
-import RegisterScreen from '../screens/RegisterScreen';
+import RegisterScreen from '../screens/register/RegisterScreen';
 import PasskeyScreen from '../screens/PasskeyScreen';
 import WhatsAppScreen from '../screens/WhatsAppScreen';
 import PortalScreen from '../screens/PortalScreen';

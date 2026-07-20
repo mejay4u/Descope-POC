@@ -5,15 +5,14 @@
  * app (browser / email client) with a redirect back to AUTH_REDIRECT_URL
  * (memberportal://auth?code=... or ?t=...). When the OS re-opens the app with
  * that deep link, we pull out the `code` (OAuth) or `t` (magic link) param and
- * exchange it with Descope for a real session. No backend is involved —
- * Descope does the exchange.
+ * exchange it with Descope for a real session via descopeService.
  */
 import { useCallback, useEffect } from 'react';
 import { Linking } from 'react-native';
-import { useDescope, useSession } from '@descope/react-native-sdk';
+import { useSession } from '@descope/react-native-sdk';
 import { AUTH_REDIRECT_SCHEME } from '../config';
 import { promptEnableBiometricLogin } from './biometricStore';
-import { messageFor } from './useAuth';
+import { useDescopeService } from '../services/useDescopeService';
 
 type Options = {
   onError?: (message: string) => void;
@@ -35,7 +34,7 @@ function getQueryParam(url: string, key: string): string | null {
 }
 
 export function useAuthDeepLink({ onError }: Options = {}) {
-  const descope = useDescope();
+  const service = useDescopeService();
   const { manageSession } = useSession();
 
   const handleUrl = useCallback(
@@ -43,35 +42,26 @@ export function useAuthDeepLink({ onError }: Options = {}) {
       if (!url || !url.startsWith(`${AUTH_REDIRECT_SCHEME}://`)) {
         return;
       }
-      try {
-        const code = getQueryParam(url, 'code');
-        const token = getQueryParam(url, 't');
+      const code = getQueryParam(url, 'code');
+      const token = getQueryParam(url, 't');
 
-        if (code) {
-          const resp = await descope.oauth.exchange(code);
-          if (!resp.ok || !resp.data) {
-            onError?.(resp.error?.errorDescription ?? 'Social sign-in failed.');
-            return;
-          }
-          await manageSession(resp.data);
-          await promptEnableBiometricLogin(resp.data.refreshJwt);
-          return;
-        }
+      const result = code
+        ? await service.exchangeOAuthCode(code)
+        : token
+          ? await service.verifyMagicLinkToken(token)
+          : null;
 
-        if (token) {
-          const resp = await descope.magicLink.verify(token);
-          if (!resp.ok || !resp.data) {
-            onError?.(resp.error?.errorDescription ?? 'Magic link sign-in failed.');
-            return;
-          }
-          await manageSession(resp.data);
-          await promptEnableBiometricLogin(resp.data.refreshJwt);
-        }
-      } catch (e) {
-        onError?.(messageFor(e, 'Sign-in failed.'));
+      if (!result) {
+        return;
       }
+      if (!result.ok) {
+        onError?.(result.error);
+        return;
+      }
+      await manageSession(result.jwt);
+      await promptEnableBiometricLogin(result.jwt.refreshJwt);
     },
-    [descope, manageSession, onError],
+    [service, manageSession, onError],
   );
 
   useEffect(() => {

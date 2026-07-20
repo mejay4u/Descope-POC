@@ -85,13 +85,22 @@ export function createDescopeService(sdk: DescopeSdk) {
           email: details.email,
           phone: details.phone || undefined,
         });
-        if (!resp.ok) {
-          return {
-            ok: false,
-            error: resp.error?.errorDescription ?? 'Could not send a verification code.',
-          };
+        if (resp.ok) {
+          return { ok: true };
         }
-        return { ok: true };
+        // The email may already belong to an account from an earlier attempt
+        // that never finished (or any existing account at all) — rather than
+        // dead-ending the wizard with "User already exists", fall back to
+        // sending a normal sign-in code. The rest of the wizard (verify,
+        // then set/replace a password) works the same either way.
+        const retry = await sdk.otp.signIn.email(details.email);
+        if (retry.ok) {
+          return { ok: true };
+        }
+        return {
+          ok: false,
+          error: resp.error?.errorDescription ?? 'Could not send a verification code.',
+        };
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Could not send a verification code.') };
       }

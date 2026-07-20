@@ -4,14 +4,13 @@
  * Every Descope API call in the app goes through this module rather than
  * hooks/screens calling `descope.*` directly. It knows nothing about React —
  * no hooks, no session state — so it's easy to unit test and easy to reuse
- * outside a component (deep-link handling, background refresh, etc).
- * Applying a session (`manageSession` / `clearSession`) stays in `useAuth`,
- * since that's inherently tied to Descope's React session context.
+ * outside a component. Applying a session (`manageSession` / `clearSession`)
+ * stays in `useAuth`, since that's inherently tied to Descope's React
+ * session context.
  *
  * Construct one with `createDescopeService(sdk)`, where `sdk` is whatever
  * `useDescope()` returns — see `useDescopeService.ts` for the React binding.
  */
-import { Linking } from 'react-native';
 import type { useDescope } from '@descope/react-native-sdk';
 import type { JWTResponse } from '@descope/core-js-sdk';
 import { AUTH_REDIRECT_URL } from '../config';
@@ -21,20 +20,11 @@ export type DescopeSdk = ReturnType<typeof useDescope>;
 export type ServiceResult = { ok: true } | { ok: false; error: string };
 export type VerifyResult = { ok: true; jwt: JWTResponse } | { ok: false; error: string };
 
-export type SocialProvider = 'apple' | 'microsoft' | 'google' | 'facebook';
-
 export type RegistrationDetails = {
   firstName: string;
   lastName: string;
   email: string;
   phone?: string;
-};
-
-const OAUTH_PROVIDER_ID: Record<SocialProvider, string> = {
-  apple: 'apple',
-  microsoft: 'microsoft',
-  google: 'google',
-  facebook: 'facebook',
 };
 
 function messageFor(e: unknown, fallback: string): string {
@@ -73,71 +63,6 @@ export function createDescopeService(sdk: DescopeSdk) {
         return { ok: true };
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Could not send a reset email.') };
-      }
-    },
-
-    // ---- Social OAuth ----------------------------------------------------
-
-    /** Opens the provider in the system browser; completion arrives via deep link. */
-    async startOAuth(provider: SocialProvider): Promise<ServiceResult> {
-      try {
-        const resp = await sdk.oauth.start(OAUTH_PROVIDER_ID[provider], AUTH_REDIRECT_URL);
-        const url = (resp.data as { url?: string } | undefined)?.url;
-        if (!resp.ok || !url) {
-          return {
-            ok: false,
-            error: resp.error?.errorDescription ?? 'Could not start social sign-in.',
-          };
-        }
-        await Linking.openURL(url);
-        return { ok: true };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Could not start social sign-in.') };
-      }
-    },
-
-    async exchangeOAuthCode(code: string): Promise<VerifyResult> {
-      try {
-        const resp = await sdk.oauth.exchange(code);
-        if (!resp.ok || !resp.data) {
-          return { ok: false, error: resp.error?.errorDescription ?? 'Social sign-in failed.' };
-        }
-        return { ok: true, jwt: resp.data };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Social sign-in failed.') };
-      }
-    },
-
-    // ---- Magic link --------------------------------------------------------
-
-    /** Works for both new and returning members — safe to offer on the Login screen. */
-    async signInOrUpWithMagicLink(email: string): Promise<ServiceResult> {
-      try {
-        const resp = await sdk.magicLink.signUpOrIn.email(email, AUTH_REDIRECT_URL);
-        if (!resp.ok) {
-          return {
-            ok: false,
-            error: resp.error?.errorDescription ?? 'Could not send magic link.',
-          };
-        }
-        return { ok: true };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Could not send magic link.') };
-      }
-    },
-
-    async verifyMagicLinkToken(token: string): Promise<VerifyResult> {
-      try {
-        const resp = await sdk.magicLink.verify(token);
-        if (!resp.ok || !resp.data) {
-          return {
-            ok: false,
-            error: resp.error?.errorDescription ?? 'Magic link sign-in failed.',
-          };
-        }
-        return { ok: true, jwt: resp.data };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Magic link sign-in failed.') };
       }
     },
 
@@ -203,38 +128,6 @@ export function createDescopeService(sdk: DescopeSdk) {
         return { ok: true };
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Could not set your password.') };
-      }
-    },
-
-    // ---- WhatsApp one-time code --------------------------------------------
-
-    async sendWhatsAppOtp(phone: string): Promise<ServiceResult> {
-      try {
-        const resp = await sdk.otp.signUpOrIn.whatsapp(phone);
-        if (!resp.ok) {
-          return {
-            ok: false,
-            error: resp.error?.errorDescription ?? 'Could not send WhatsApp code.',
-          };
-        }
-        return { ok: true };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Could not send WhatsApp code.') };
-      }
-    },
-
-    async verifyWhatsAppOtp(phone: string, code: string): Promise<VerifyResult> {
-      try {
-        const resp = await sdk.otp.verify.whatsapp(phone, code);
-        if (!resp.ok || !resp.data) {
-          return {
-            ok: false,
-            error: resp.error?.errorDescription ?? 'Invalid code. Please try again.',
-          };
-        }
-        return { ok: true, jwt: resp.data };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Invalid code. Please try again.') };
       }
     },
 

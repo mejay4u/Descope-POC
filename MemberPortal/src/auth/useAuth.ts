@@ -11,12 +11,7 @@ import { useCallback } from 'react';
 import { useSession } from '@descope/react-native-sdk';
 import type { JWTResponse } from '@descope/core-js-sdk';
 import { useDescopeService } from '../services/useDescopeService';
-import type {
-  RegistrationDetails,
-  ServiceResult,
-  SocialProvider,
-  VerifyResult,
-} from '../services/descopeService';
+import type { RegistrationDetails, ServiceResult, VerifyResult } from '../services/descopeService';
 import {
   disableBiometricLogin,
   getBiometricRefreshToken,
@@ -24,7 +19,7 @@ import {
 } from './biometricStore';
 
 export type AuthResult = ServiceResult;
-export type { VerifyResult, RegistrationDetails, SocialProvider };
+export type { VerifyResult, RegistrationDetails };
 
 export function useAuth() {
   const service = useDescopeService();
@@ -51,27 +46,6 @@ export function useAuth() {
 
   const requestPasswordReset = useCallback(
     (email: string) => service.requestPasswordReset(email),
-    [service],
-  );
-
-  /**
-   * Start web-based OAuth. Opens the provider in the system browser; the app is
-   * re-entered via the AUTH_REDIRECT_URL deep link, which is exchanged for a
-   * session in useAuthDeepLink().
-   */
-  const signInWithOAuth = useCallback(
-    (provider: SocialProvider) => service.startOAuth(provider),
-    [service],
-  );
-
-  /**
-   * Email magic link, works for both new and returning members (mirrors how
-   * WhatsApp's `otp.signUpOrIn` is used below) — a magic link tile can live
-   * on the Login screen without failing for people who don't have an
-   * account yet.
-   */
-  const signInOrUpWithMagicLink = useCallback(
-    (email: string) => service.signInOrUpWithMagicLink(email),
     [service],
   );
 
@@ -107,19 +81,6 @@ export function useAuth() {
     [manageSession],
   );
 
-  /**
-   * WhatsApp one-time code. Sends a code via `otp.signUpOrIn` (works for both
-   * new and returning members), then `verifyWhatsAppOtp` exchanges the code
-   * the user enters for a session.
-   */
-  const sendWhatsAppOtp = useCallback((phone: string) => service.sendWhatsAppOtp(phone), [service]);
-
-  const verifyWhatsAppOtp = useCallback(
-    async (phone: string, code: string): Promise<AuthResult> =>
-      applySession(await service.verifyWhatsAppOtp(phone, code)),
-    [service, applySession],
-  );
-
   /** Sign in using the biometric-protected refresh token. */
   const signInWithBiometrics = useCallback(async (): Promise<AuthResult> => {
     const refreshJwt = await getBiometricRefreshToken();
@@ -139,7 +100,7 @@ export function useAuth() {
   const signOut = useCallback(async (): Promise<void> => {
     await service.logout(session?.refreshJwt);
     // Deliberately does NOT clear the biometric-protected refresh token —
-    // that's what lets "Sign in with Face ID" on the Welcome screen work
+    // that's what lets "Sign in with Biometrics" on the Login screen work
     // *after* signing out. It's only removed via the Portal's explicit
     // toggle, or automatically if it's later found to be invalid.
     await clearSession();
@@ -147,15 +108,11 @@ export function useAuth() {
 
   return {
     signInWithEmail,
-    signInWithOAuth,
-    signInOrUpWithMagicLink,
     startRegistration,
     verifyRegistrationCode,
     completeRegistration,
     finishRegistration,
     requestPasswordReset,
-    sendWhatsAppOtp,
-    verifyWhatsAppOtp,
     signInWithBiometrics,
     signOut,
   };

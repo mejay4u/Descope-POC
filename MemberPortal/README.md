@@ -9,39 +9,40 @@ directly to Descope's hosted service using your Project ID.
 | Feature | How it's implemented |
 | --- | --- |
 | **Welcome screen** with *Sign In* / *Create Account* buttons | `src/screens/WelcomeScreen.tsx` |
+| **Login** — email + password, show/hide password, "Remember username", "Forgot password?" | `descope.password.signIn` / `descope.password.sendReset` (`src/screens/LoginScreen.tsx`) |
 | **Register** — 5-step wizard (personal info → verify email → review → set password → success) | `descope.otp.signUp.email` → `otp.verify.email` → `password.update` (`src/screens/register/`) |
-| **Login** (email + password) | `descope.password.signIn` |
-| **Forgot password** | `descope.password.sendReset` (inline on the Login screen) |
-| **Social login** — Apple, Microsoft, Google, Facebook | `descope.oauth.start` → browser → deep link → `descope.oauth.exchange` |
-| **Magic link** (email) | `descope.magicLink.signIn/signUp.email` → email → deep link → `descope.magicLink.verify` |
-| **WhatsApp one-time code** | `descope.otp.signUpOrIn.whatsapp` → code sent over WhatsApp → `descope.otp.verify.whatsapp` (`src/screens/WhatsAppScreen.tsx`) |
-| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Refresh token stored in the Keychain/Keystore behind biometrics (`react-native-keychain`), then `descope.refresh`. The app **asks** before enabling it (never silently) after any successful sign-in. Also offered as its own tile on the Login screen once enabled. |
-| **Passkeys** (WebAuthn) | Runs a Descope **Flow** in `FlowView` (native passkey ceremony) |
+| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Refresh token stored in the Keychain/Keystore behind biometrics (`react-native-keychain`), then `descope.refresh`. The app **asks** before enabling it (never silently) after any successful sign-in. Shown as its own button on the Login screen once enabled. |
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, sign out |
 
 Session state is gated in `src/navigation/RootNavigator.tsx`: while a session
 exists the app shows the Portal, otherwise the Welcome/Login/Register flow.
 
+This app intentionally matches a specific design reference (Welcome + Sign In
++ multi-step Create Account) rather than offering every Descope-supported
+method — no social login, magic link, WhatsApp OTP, or passkeys. Those are
+straightforward to add back through the same `descopeService.ts` pattern if a
+future design calls for them.
+
 ## Project structure
 
 ```
 src/
-  config/index.ts          # Descope Project ID, auth redirect scheme, passkey flow ID
+  config/index.ts          # Descope Project ID, auth redirect scheme (used by password reset)
   theme/                   # colors, spacing, typography
   branding/                # BrandingContext (injectable logo/app name/tagline/button), DefaultLogo
   services/
     descopeService.ts      # framework-agnostic wrapper — every raw `descope.*` call lives here
     useDescopeService.ts   # binds descopeService to the current useDescope() instance
   components/              # AppButton (branding-injectable), DefaultAppButton, TextField,
-                            # MethodTile, StepProgress, Banner, icons/
+                            # StepProgress, Banner, icons/
   auth/
     useAuth.ts             # React binding over descopeService — session state + biometric prompts
-    useAuthDeepLink.ts     # completes social + magic link sign-in from the redirect deep link
     biometricStore.ts      # biometric-gated Keychain storage of the refresh token
+    rememberedEmail.ts     # local (non-biometric) Keychain storage for "Remember username"
   navigation/              # RootNavigator + route types
   screens/
     register/               # RegisterScreen (orchestrator) + one file per wizard step
-    WelcomeScreen.tsx, LoginScreen.tsx, PasskeyScreen.tsx, WhatsAppScreen.tsx, PortalScreen.tsx
+    WelcomeScreen.tsx, LoginScreen.tsx, PortalScreen.tsx
 App.tsx                    # wraps everything in Descope's <AuthProvider> + <BrandingProvider>
 ```
 
@@ -51,22 +52,22 @@ App.tsx                    # wraps everything in Descope's <AuthProvider> + <Bra
   directly. It takes the SDK instance as a constructor argument
   (`createDescopeService(sdk)`) and returns plain async methods — no React,
   no hooks — so it's trivial to unit test or reuse outside a component.
-  `useAuth` and `useAuthDeepLink` are thin React layers on top of it: they
-  call the service, then apply the resulting session
-  (`manageSession`/biometric-enrollment prompt), which *is* inherently
-  React-context-bound.
+  `useAuth` is a thin React layer on top of it: it calls the service, then
+  applies the resulting session (`manageSession`/biometric-enrollment
+  prompt), which *is* inherently React-context-bound.
 - **Branding is dependency-injected via `BrandingContext`.** `App.tsx` wraps
   the tree in `<BrandingProvider>`; screens read `appName` / `tagline` /
   `Logo` via `useBranding()` instead of hardcoding them (see
-  `WelcomeScreen.tsx`). `AppButton` is itself just a selector — it renders
-  whatever `Button` component the branding config supplies, falling back to
-  `DefaultAppButton`. To white-label the app for a different deployment,
-  pass a `value` prop into `BrandingProvider` in `App.tsx`:
+  `WelcomeScreen.tsx` / `LoginScreen.tsx`). `AppButton` is itself just a
+  selector — it renders whatever `Button` component the branding config
+  supplies, falling back to `DefaultAppButton`. To white-label the app for a
+  different deployment, pass a `value` prop into `BrandingProvider` in
+  `App.tsx`:
   ```tsx
   <BrandingProvider value={{ appName: 'Acme Health', Logo: AcmeLogo }}>
   ```
-  No screen code needs to change — every button and the Welcome screen's
-  logo/name update automatically.
+  No screen code needs to change — every button and the logo/app name update
+  automatically everywhere they're used.
 
 ## 1. Prerequisites
 
@@ -84,13 +85,9 @@ App.tsx                    # wraps everything in Descope's <AuthProvider> + <Bra
    ```ts
    export const DESCOPE_PROJECT_ID = 'P2xxxxxxxxxxxxxxxxxxxxxxxx';
    ```
-3. In the Descope Console → **Authentication Methods**, enable **Passwords**,
-   **Magic Link**, and **OTP** with both the **Email** delivery method (used by
-   the registration wizard) and **WhatsApp** (requires a WhatsApp Business
-   sender configured in the Console) turned on.
-4. In **Authentication Methods → Social**, configure the **Apple**, **Microsoft**,
-   **Google**, and **Facebook** OAuth providers (client IDs/secrets from each
-   provider).
+3. In the Descope Console → **Authentication Methods**, enable **Passwords**
+   and **OTP** with the **Email** delivery method (used by the registration
+   wizard).
 
 ## 3. Install & run
 
@@ -107,41 +104,32 @@ npm run ios
 
 ## 4. Native configuration (already wired up)
 
-These are already set in this repo — listed so you know what powers each feature.
-
-### Social + magic link redirect (deep link)
-Social sign-in opens the provider in the browser, and magic link sign-in opens
-the emailed link; both return to the app via the same custom scheme
-**`memberportal://auth`** (see `AUTH_REDIRECT_URL` in `src/config/index.ts`).
+### Password reset redirect
+`descope.password.sendReset` is passed the custom scheme
+**`memberportal://auth`** (see `AUTH_REDIRECT_URL` in `src/config/index.ts`)
+as its redirect URL. The app doesn't currently handle an incoming deep link
+for this (there's no OAuth/magic-link flow left to complete) — the user
+resets their password on the web page Descope emails them, then comes back
+and signs in normally. The scheme registration below is left in place in
+case a future feature needs it again:
 
 - **iOS** — `ios/MemberPortal/Info.plist` registers the `memberportal` URL scheme,
   and `ios/MemberPortal/AppDelegate.swift` forwards the URL to `RCTLinkingManager`.
 - **Android** — `android/app/src/main/AndroidManifest.xml` has a `VIEW`
   intent-filter for `memberportal://auth` on a `singleTask` MainActivity.
 
-> In the Descope Console, add `memberportal://auth` to the project's list of
-> **approved redirect URLs** for both OAuth and Magic Link.
-
 ### Biometrics
 - **iOS** — `NSFaceIDUsageDescription` is set in `Info.plist`.
 - **Android** — `USE_BIOMETRIC` / `USE_FINGERPRINT` permissions are in the manifest.
 
-### Passkeys setup (extra platform work required)
-Passkeys use a Descope **Flow** rendered in `FlowView`. To make the native
-passkey ceremony work you must associate your app with a web domain:
-
-1. In the Descope Flow editor, create/enable a flow with **Passkeys** and set
-   `PASSKEY_FLOW_ID` in `src/config/index.ts` (default `sign-up-or-in`).
-2. **iOS** — add the **Associated Domains** capability in Xcode with
-   `webcredentials:<your-domain>`; host `/.well-known/apple-app-site-association`.
-3. **Android** — host `/.well-known/assetlinks.json` for your domain and package.
-4. **Apple sign-in** additionally needs the *Sign in with Apple* capability in Xcode.
-
-See the Descope docs: https://docs.descope.com (Mobile → React Native, and
-Passkeys / WebAuthn).
-
 ## 5. How each auth method flows
 
+- **Email/password sign-in** → `useAuth().signInWithEmail` →
+  `manageSession(resp.data)` sets the active session → app shows the Portal.
+  "Remember username" (checked by default once set) saves the email locally
+  via `rememberedEmail.ts` and pre-fills it on the next launch.
+- **Forgot password** → `requestPasswordReset` calls `descope.password.sendReset`,
+  inline on the Login screen.
 - **Register** → `screens/register/RegisterScreen.tsx` orchestrates a 5-step
   wizard, each step its own component in the same folder:
   1. *Personal information* (name, DOB, zip, email, phone) → `startRegistration`
@@ -163,25 +151,10 @@ Passkeys / WebAuthn).
   them as custom user attributes needs either a Descope Flow action or the
   server-side Management SDK; wiring that up is a follow-up once the
   corresponding Descope Flow exists.
-- **Email/password sign-in** → `useAuth().signInWithEmail` →
-  `manageSession(resp.data)` sets the active session → app shows the Portal.
-- **Social** → `signInWithOAuth(provider)` opens the browser; on return
-  `useAuthDeepLink` exchanges the `code` and sets the session.
-- **Magic link** → `signInOrUpWithMagicLink` (works for new and returning
-  members) emails a link; on return `useAuthDeepLink` verifies the `t` token
-  and sets the session.
-- **Forgot password** → `requestPasswordReset` calls `descope.password.sendReset`,
-  inline on the Login screen.
-- **WhatsApp** → `WhatsAppScreen` collects a phone number, sends a code via
-  `sendWhatsAppOtp`, then `verifyWhatsAppOtp` exchanges the entered code for a
-  session.
 - **Biometric** → after any successful sign-in the app *asks* (native confirm
   dialog, never silent) whether to save the refresh token behind biometrics.
-  The Welcome screen and the Login screen's method grid then show a biometric
-  option, which reads the token (OS prompt) and calls `descope.refresh`.
-- **Passkey** → the *Sign in / Register with a passkey* buttons open
-  `PasskeyScreen`, which runs the passkey Flow and calls `manageSession` on
-  success.
+  The Login screen then shows a "Sign in with Face ID/Fingerprint" button,
+  which reads the token (OS prompt) and calls `descope.refresh`.
 
 ### Troubleshooting: biometric enrollment doesn't "stick"
 `enableBiometricLogin` does **not** require `SECURITY_LEVEL.SECURE_HARDWARE`
@@ -198,6 +171,3 @@ ID → Matching Face**.
   as Descope custom user attributes once the corresponding Descope Flow is
   built — see "How each auth method flows → Register" above.
 - iOS builds require a Mac; on Windows you can build and run the Android app.
-- For App Store release, Apple requires **native** *Sign in with Apple*; the
-  passkey Flow path (with the Apple capability) satisfies this. The web-OAuth
-  Apple button here is fine for development/Android.

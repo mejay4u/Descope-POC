@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -12,59 +13,59 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import TextField from '../components/TextField';
 import AppButton from '../components/AppButton';
 import Banner from '../components/Banner';
-import MethodTile from '../components/MethodTile';
-import AppleIcon from '../components/icons/AppleIcon';
-import MicrosoftIcon from '../components/icons/MicrosoftIcon';
-import GoogleIcon from '../components/icons/GoogleIcon';
-import FacebookIcon from '../components/icons/FacebookIcon';
-import MagicLinkIcon from '../components/icons/MagicLinkIcon';
-import WhatsAppIcon from '../components/icons/WhatsAppIcon';
-import PasskeyIcon from '../components/icons/PasskeyIcon';
+import CheckIcon from '../components/icons/CheckIcon';
+import EyeIcon from '../components/icons/EyeIcon';
 import FingerprintIcon from '../components/icons/FingerprintIcon';
-import { useAuth, type SocialProvider } from '../auth/useAuth';
-import { useAuthDeepLink } from '../auth/useAuthDeepLink';
-import { biometryLabel, getSupportedBiometry, hasBiometricLogin } from '../auth/biometricStore';
+import { useBranding } from '../branding/BrandingContext';
+import { useAuth } from '../auth/useAuth';
+import {
+  biometryLabel,
+  getSupportedBiometry,
+  hasBiometricLogin,
+} from '../auth/biometricStore';
+import {
+  clearRememberedEmail,
+  getRememberedEmail,
+  saveRememberedEmail,
+} from '../auth/rememberedEmail';
 import { colors, spacing, typography } from '../theme';
 import type { AuthStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
-type Method = SocialProvider | 'magiclink' | 'biometric';
 
 export default function LoginScreen({ navigation }: Props) {
-  const {
-    signInWithEmail,
-    signInWithOAuth,
-    signInOrUpWithMagicLink,
-    signInWithBiometrics,
-    requestPasswordReset,
-  } = useAuth();
+  const { signInWithEmail, signInWithBiometrics, requestPasswordReset } = useAuth();
+  const { Logo } = useBranding();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [method, setMethod] = useState<Method | null>(null);
-  const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
-
-  useAuthDeepLink({ onError: setError });
+  const [bioBusy, setBioBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [enrolled, supported] = await Promise.all([
+      const [enrolled, supported, rememberedEmail] = await Promise.all([
         hasBiometricLogin(),
         getSupportedBiometry(),
+        getRememberedEmail(),
       ]);
       setBioAvailable(enrolled && !!supported);
       setBioName(biometryLabel(supported));
+      if (rememberedEmail) {
+        setEmail(rememberedEmail);
+        setRemember(true);
+      }
     })();
   }, []);
 
   const onSubmit = async () => {
     setError(null);
-    setMagicLinkSent(false);
     setResetSent(false);
     if (!email.trim() || !password) {
       setError('Please enter your email and password.');
@@ -75,43 +76,18 @@ export default function LoginScreen({ navigation }: Props) {
     setBusy(false);
     if (!res.ok) {
       setError(res.error);
+      return;
+    }
+    if (remember) {
+      await saveRememberedEmail(email.trim());
+    } else {
+      await clearRememberedEmail();
     }
     // Success is handled by the session listener in App.tsx.
   };
 
-  const onSocial = async (provider: SocialProvider) => {
-    setError(null);
-    setMagicLinkSent(false);
-    setResetSent(false);
-    setMethod(provider);
-    const res = await signInWithOAuth(provider);
-    setMethod(null);
-    if (!res.ok) {
-      setError(res.error);
-    }
-  };
-
-  const onMagicLink = async () => {
-    setError(null);
-    setMagicLinkSent(false);
-    setResetSent(false);
-    if (!email.trim()) {
-      setError('Enter your email above to receive a magic link.');
-      return;
-    }
-    setMethod('magiclink');
-    const res = await signInOrUpWithMagicLink(email.trim());
-    setMethod(null);
-    if (!res.ok) {
-      setError(res.error);
-    } else {
-      setMagicLinkSent(true);
-    }
-  };
-
   const onForgotPassword = async () => {
     setError(null);
-    setMagicLinkSent(false);
     setResetSent(false);
     if (!email.trim()) {
       setError('Enter your email above to reset your password.');
@@ -129,11 +105,10 @@ export default function LoginScreen({ navigation }: Props) {
 
   const onBiometric = async () => {
     setError(null);
-    setMagicLinkSent(false);
     setResetSent(false);
-    setMethod('biometric');
+    setBioBusy(true);
     const res = await signInWithBiometrics();
-    setMethod(null);
+    setBioBusy(false);
     if (!res.ok) {
       setError(res.error);
       setBioAvailable(await hasBiometricLogin());
@@ -148,16 +123,12 @@ export default function LoginScreen({ navigation }: Props) {
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to your Member Portal.</Text>
+          <View style={styles.logoWrap}>
+            <Logo size={56} />
+          </View>
+          <Text style={styles.title}>Sign in</Text>
 
           {!!error && <Banner variant="error">{error}</Banner>}
-
-          {magicLinkSent && (
-            <Banner variant="success">
-              Magic link sent — check {email.trim()} to finish signing in.
-            </Banner>
-          )}
 
           {resetSent && (
             <Banner variant="success">
@@ -167,7 +138,7 @@ export default function LoginScreen({ navigation }: Props) {
 
           <View style={styles.form}>
             <TextField
-              label="Email"
+              label="Email address"
               placeholder="you@example.com"
               value={email}
               onChangeText={setEmail}
@@ -181,93 +152,60 @@ export default function LoginScreen({ navigation }: Props) {
               placeholder="••••••••"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               textContentType="password"
+              rightElement={
+                <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8}>
+                  <EyeIcon visible={showPassword} size={20} color={colors.textMuted} />
+                </Pressable>
+              }
             />
 
-            <Text style={styles.forgotLink} onPress={onForgotPassword}>
-              {resetBusy ? 'Sending…' : 'Forgot password?'}
-            </Text>
+            <View style={styles.optionsRow}>
+              <Pressable style={styles.rememberRow} onPress={() => setRemember(v => !v)}>
+                <View style={[styles.checkbox, remember && styles.checkboxChecked]}>
+                  {remember && <CheckIcon size={12} color={colors.white} />}
+                </View>
+                <Text style={styles.rememberText}>Remember username</Text>
+              </Pressable>
+              <Text style={styles.forgotLink} onPress={onForgotPassword}>
+                {resetBusy ? 'Sending…' : 'Forgot password?'}
+              </Text>
+            </View>
 
-            <AppButton label="Sign In" onPress={onSubmit} loading={busy} />
-          </View>
+            <AppButton
+              label="Sign In"
+              onPress={onSubmit}
+              loading={busy}
+              style={bioAvailable ? styles.actionSpacing : undefined}
+            />
 
-          <View style={styles.dividerRow}>
-            <View style={styles.line} />
-            <Text style={styles.dividerText}>or continue with</Text>
-            <View style={styles.line} />
-          </View>
-
-          <View style={styles.methodGrid}>
-            <MethodTile
-              icon={<AppleIcon size={18} color={colors.text} />}
-              label="Apple"
-              onPress={() => onSocial('apple')}
-              loading={method === 'apple'}
-              disabled={!!method}
-            />
-            <MethodTile
-              icon={<GoogleIcon size={18} />}
-              label="Google"
-              onPress={() => onSocial('google')}
-              loading={method === 'google'}
-              disabled={!!method}
-            />
-            <MethodTile
-              icon={<MicrosoftIcon size={18} />}
-              label="Microsoft"
-              onPress={() => onSocial('microsoft')}
-              loading={method === 'microsoft'}
-              disabled={!!method}
-            />
-            <MethodTile
-              icon={<FacebookIcon size={18} />}
-              label="Facebook"
-              onPress={() => onSocial('facebook')}
-              loading={method === 'facebook'}
-              disabled={!!method}
-            />
-            <MethodTile
-              icon={<MagicLinkIcon size={18} color={colors.brand} />}
-              label="Magic Link"
-              onPress={onMagicLink}
-              loading={method === 'magiclink'}
-              disabled={!!method}
-            />
-            <MethodTile
-              icon={<WhatsAppIcon size={18} />}
-              label="WhatsApp"
-              onPress={() => navigation.navigate('WhatsApp')}
-              disabled={!!method}
-            />
             {bioAvailable && (
-              <MethodTile
+              <AppButton
+                label={`Sign in with ${bioName}`}
+                variant="secondary"
                 icon={<FingerprintIcon size={18} color={colors.brand} />}
-                label={bioName}
                 onPress={onBiometric}
-                loading={method === 'biometric'}
-                disabled={!!method}
+                loading={bioBusy}
               />
             )}
           </View>
 
+          <View style={styles.dividerRow}>
+            <View style={styles.line} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.line} />
+          </View>
+
           <AppButton
-            label="Sign in with a passkey"
+            label="Register"
             variant="secondary"
-            icon={<PasskeyIcon size={18} color={colors.brand} />}
-            onPress={() => navigation.navigate('Passkey', { mode: 'signin' })}
-            disabled={!!method}
-            style={styles.passkeyButton}
+            onPress={() => navigation.navigate('Register')}
           />
 
-          <View style={styles.footerRow}>
-            <Text style={styles.footerText}>New here? </Text>
-            <Text
-              style={styles.footerLink}
-              onPress={() => navigation.navigate('Register')}>
-              Create an account
-            </Text>
-          </View>
+          <Text style={styles.footer}>
+            By signing in you agree to our Terms & Privacy Policy.
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -278,34 +216,41 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
-  title: { ...typography.title },
-  subtitle: { ...typography.subtitle, marginTop: spacing.xs, marginBottom: spacing.lg },
+  logoWrap: { alignItems: 'center', marginBottom: spacing.md },
+  title: { ...typography.title, textAlign: 'center', marginBottom: spacing.lg },
   form: { marginBottom: spacing.md },
-  forgotLink: {
-    alignSelf: 'flex-end',
-    color: colors.brand,
-    fontWeight: '600',
-    fontSize: 13,
+  optionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.md,
   },
+  rememberRow: { flexDirection: 'row', alignItems: 'center' },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.xs,
+  },
+  checkboxChecked: { backgroundColor: colors.brand, borderColor: colors.brand },
+  rememberText: { color: colors.textMuted, fontSize: 13 },
+  forgotLink: { color: colors.brand, fontWeight: '600', fontSize: 13 },
+  actionSpacing: { marginBottom: spacing.sm },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: spacing.md,
+    marginVertical: spacing.lg,
   },
   line: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { marginHorizontal: spacing.sm, color: colors.textMuted, fontSize: 13 },
-  methodGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  passkeyButton: { marginTop: spacing.xs, marginBottom: spacing.md },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  footer: {
+    textAlign: 'center',
+    color: colors.textMuted,
+    fontSize: 12,
     marginTop: spacing.lg,
   },
-  footerText: { color: colors.textMuted, fontSize: 15 },
-  footerLink: { color: colors.brand, fontWeight: '700', fontSize: 15 },
 });

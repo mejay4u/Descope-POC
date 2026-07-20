@@ -7,6 +7,7 @@
 import { useCallback } from 'react';
 import { Linking } from 'react-native';
 import { useDescope, useSession } from '@descope/react-native-sdk';
+import type { JWTResponse } from '@descope/core-js-sdk';
 import { AUTH_REDIRECT_URL } from '../config';
 import {
   disableBiometricLogin,
@@ -15,6 +16,14 @@ import {
 } from './biometricStore';
 
 export type AuthResult = { ok: true } | { ok: false; error: string };
+export type VerifyResult = { ok: true; jwt: JWTResponse } | { ok: false; error: string };
+
+export type RegistrationDetails = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+};
 
 export type SocialProvider = 'apple' | 'microsoft' | 'google' | 'facebook';
 
@@ -34,30 +43,6 @@ export function messageFor(e: unknown, fallback: string): string {
 export function useAuth() {
   const descope = useDescope();
   const { manageSession, clearSession, session } = useSession();
-
-  const signUpWithEmail = useCallback(
-    async (
-      name: string,
-      email: string,
-      password: string,
-    ): Promise<AuthResult> => {
-      try {
-        const resp = await descope.password.signUp(email, password, {
-          name,
-          email,
-        });
-        if (!resp.ok || !resp.data) {
-          return { ok: false, error: resp.error?.errorDescription ?? 'Sign up failed.' };
-        }
-        await manageSession(resp.data);
-        await promptEnableBiometricLogin(resp.data.refreshJwt);
-        return { ok: true };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Sign up failed.') };
-      }
-    },
-    [descope, manageSession],
-  );
 
   const signInWithEmail = useCallback(
     async (email: string, password: string): Promise<AuthResult> => {
@@ -108,14 +93,15 @@ export function useAuth() {
   );
 
   /**
-   * Email magic link. Sends a one-time sign-in link; the session is created
-   * later when the user taps the link and the app receives the
-   * AUTH_REDIRECT_URL deep link (handled in useAuthDeepLink()).
+   * Email magic link, works for both new and returning members (mirrors how
+   * WhatsApp's `otp.signUpOrIn` is used below) — a magic link tile can live
+   * on the Login screen without failing for people who don't have an
+   * account yet.
    */
-  const signInWithMagicLink = useCallback(
+  const signInOrUpWithMagicLink = useCallback(
     async (email: string): Promise<AuthResult> => {
       try {
-        const resp = await descope.magicLink.signIn.email(email, AUTH_REDIRECT_URL);
+        const resp = await descope.magicLink.signUpOrIn.email(email, AUTH_REDIRECT_URL);
         if (!resp.ok) {
           return {
             ok: false,
@@ -130,22 +116,99 @@ export function useAuth() {
     [descope],
   );
 
-  const signUpWithMagicLink = useCallback(
-    async (name: string, email: string): Promise<AuthResult> => {
+  /**
+   * Multi-step registration wizard (Personal Info -> Verify Email -> Review
+   * -> Set Password). Splits what a single `password.signUp` call normally
+   * does into three steps so the UI can walk the user through them:
+   *
+   *   1. startRegistration — creates the (unverified) user and emails an OTP.
+   *   2. verifyRegistrationCode — exchanges the code for a session. The
+   *      session is intentionally NOT applied yet (no `manageSession`) so the
+   *      app doesn't jump into the Portal mid-wizard — the caller holds onto
+   *      the returned JWT until the wizard finishes.
+   *   3. completeRegistration — attaches a password to the now-verified
+   *      account using that held session, then the caller applies the
+   *      session with `manageSession`.
+   *
+   * Fields the Descope `User` type doesn't support (date of birth, zip code)
+   * are collected by the UI but aren't persisted yet — that needs either a
+   * Descope Flow action or the server-side Management SDK, neither of which
+   * this front-end-only app can reach. They're wired up once that piece
+   * lands.
+   */
+  const startRegistration = useCallback(
+    async (details: RegistrationDetails): Promise<AuthResult> => {
       try {
-        const resp = await descope.magicLink.signUp.email(email, AUTH_REDIRECT_URL, {
-          name,
-          email,
+        const resp = await descope.otp.signUp.email(details.email, {
+          name: `${details.firstName} ${details.lastName}`.trim(),
+          givenName: details.firstName,
+          familyName: details.lastName,
+          email: details.email,
+          phone: details.phone || undefined,
         });
         if (!resp.ok) {
           return {
             ok: false,
-            error: resp.error?.errorDescription ?? 'Could not send magic link.',
+            error: resp.error?.errorDescription ?? 'Could not send a verification code.',
           };
         }
         return { ok: true };
       } catch (e) {
-        return { ok: false, error: messageFor(e, 'Could not send magic link.') };
+        return { ok: false, error: messageFor(e, 'Could not send a verification code.') };
+      }
+    },
+    [descope],
+  );
+
+  const verifyRegistrationCode = useCallback(
+    async (email: string, code: string): Promise<VerifyResult> => {
+      try {
+        const resp = await descope.otp.verify.email(email, code);
+        if (!resp.ok || !resp.data) {
+          return {
+            ok: false,
+            error: resp.error?.errorDescription ?? 'Invalid code. Please try again.',
+          };
+        }
+        return { ok: true, jwt: resp.data };
+      } catch (e) {
+        return { ok: false, error: messageFor(e, 'Invalid code. Please try again.') };
+      }
+    },
+    [descope],
+  );
+
+  const completeRegistration = useCallback(
+    async (email: string, password: string, sessionJwt: string): Promise<AuthResult> => {
+      try {
+        const resp = await descope.password.update(email, password, sessionJwt);
+        if (!resp.ok) {
+          return {
+            ok: false,
+            error: resp.error?.errorDescription ?? 'Could not set your password.',
+          };
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: messageFor(e, 'Could not set your password.') };
+      }
+    },
+    [descope],
+  );
+
+  const requestPasswordReset = useCallback(
+    async (email: string): Promise<AuthResult> => {
+      try {
+        const resp = await descope.password.sendReset(email, AUTH_REDIRECT_URL);
+        if (!resp.ok) {
+          return {
+            ok: false,
+            error: resp.error?.errorDescription ?? 'Could not send a reset email.',
+          };
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: messageFor(e, 'Could not send a reset email.') };
       }
     },
     [descope],
@@ -231,11 +294,13 @@ export function useAuth() {
   }, [descope, session, clearSession]);
 
   return {
-    signUpWithEmail,
     signInWithEmail,
     signInWithOAuth,
-    signInWithMagicLink,
-    signUpWithMagicLink,
+    signInOrUpWithMagicLink,
+    startRegistration,
+    verifyRegistrationCode,
+    completeRegistration,
+    requestPasswordReset,
     sendWhatsAppOtp,
     verifyWhatsAppOtp,
     signInWithBiometrics,

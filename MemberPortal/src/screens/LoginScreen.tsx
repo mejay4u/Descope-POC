@@ -31,14 +31,21 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 type Method = SocialProvider | 'magiclink' | 'biometric';
 
 export default function LoginScreen({ navigation }: Props) {
-  const { signInWithEmail, signInWithOAuth, signInWithMagicLink, signInWithBiometrics } =
-    useAuth();
+  const {
+    signInWithEmail,
+    signInWithOAuth,
+    signInOrUpWithMagicLink,
+    signInWithBiometrics,
+    requestPasswordReset,
+  } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [method, setMethod] = useState<Method | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
 
@@ -58,6 +65,7 @@ export default function LoginScreen({ navigation }: Props) {
   const onSubmit = async () => {
     setError(null);
     setMagicLinkSent(false);
+    setResetSent(false);
     if (!email.trim() || !password) {
       setError('Please enter your email and password.');
       return;
@@ -74,6 +82,7 @@ export default function LoginScreen({ navigation }: Props) {
   const onSocial = async (provider: SocialProvider) => {
     setError(null);
     setMagicLinkSent(false);
+    setResetSent(false);
     setMethod(provider);
     const res = await signInWithOAuth(provider);
     setMethod(null);
@@ -85,12 +94,13 @@ export default function LoginScreen({ navigation }: Props) {
   const onMagicLink = async () => {
     setError(null);
     setMagicLinkSent(false);
+    setResetSent(false);
     if (!email.trim()) {
       setError('Enter your email above to receive a magic link.');
       return;
     }
     setMethod('magiclink');
-    const res = await signInWithMagicLink(email.trim());
+    const res = await signInOrUpWithMagicLink(email.trim());
     setMethod(null);
     if (!res.ok) {
       setError(res.error);
@@ -99,9 +109,28 @@ export default function LoginScreen({ navigation }: Props) {
     }
   };
 
+  const onForgotPassword = async () => {
+    setError(null);
+    setMagicLinkSent(false);
+    setResetSent(false);
+    if (!email.trim()) {
+      setError('Enter your email above to reset your password.');
+      return;
+    }
+    setResetBusy(true);
+    const res = await requestPasswordReset(email.trim());
+    setResetBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+    } else {
+      setResetSent(true);
+    }
+  };
+
   const onBiometric = async () => {
     setError(null);
     setMagicLinkSent(false);
+    setResetSent(false);
     setMethod('biometric');
     const res = await signInWithBiometrics();
     setMethod(null);
@@ -130,6 +159,12 @@ export default function LoginScreen({ navigation }: Props) {
             </Banner>
           )}
 
+          {resetSent && (
+            <Banner variant="success">
+              Password reset email sent — check {email.trim()} for instructions.
+            </Banner>
+          )}
+
           <View style={styles.form}>
             <TextField
               label="Email"
@@ -149,6 +184,10 @@ export default function LoginScreen({ navigation }: Props) {
               secureTextEntry
               textContentType="password"
             />
+
+            <Text style={styles.forgotLink} onPress={onForgotPassword}>
+              {resetBusy ? 'Sending…' : 'Forgot password?'}
+            </Text>
 
             <AppButton label="Sign In" onPress={onSubmit} loading={busy} />
           </View>
@@ -242,6 +281,13 @@ const styles = StyleSheet.create({
   title: { ...typography.title },
   subtitle: { ...typography.subtitle, marginTop: spacing.xs, marginBottom: spacing.lg },
   form: { marginBottom: spacing.md },
+  forgotLink: {
+    alignSelf: 'flex-end',
+    color: colors.brand,
+    fontWeight: '600',
+    fontSize: 13,
+    marginBottom: spacing.md,
+  },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',

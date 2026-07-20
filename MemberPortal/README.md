@@ -9,8 +9,9 @@ directly to Descope's hosted service using your Project ID.
 | Feature | How it's implemented |
 | --- | --- |
 | **Welcome screen** with *Sign In* / *Create Account* buttons | `src/screens/WelcomeScreen.tsx` |
-| **Register** (email + password) | `descope.password.signUp` |
+| **Register** — 5-step wizard (personal info → verify email → review → set password → success) | `descope.otp.signUp.email` → `otp.verify.email` → `password.update` (`src/screens/RegisterScreen.tsx`) |
 | **Login** (email + password) | `descope.password.signIn` |
+| **Forgot password** | `descope.password.sendReset` (inline on the Login screen) |
 | **Social login** — Apple, Microsoft, Google, Facebook | `descope.oauth.start` → browser → deep link → `descope.oauth.exchange` |
 | **Magic link** (email) | `descope.magicLink.signIn/signUp.email` → email → deep link → `descope.magicLink.verify` |
 | **WhatsApp one-time code** | `descope.otp.signUpOrIn.whatsapp` → code sent over WhatsApp → `descope.otp.verify.whatsapp` (`src/screens/WhatsAppScreen.tsx`) |
@@ -27,7 +28,7 @@ exists the app shows the Portal, otherwise the Welcome/Login/Register flow.
 src/
   config/index.ts          # Descope Project ID, auth redirect scheme, passkey flow ID
   theme/                   # colors, spacing, typography
-  components/              # AppButton, TextField, MethodTile, icons/
+  components/              # AppButton, TextField, MethodTile, StepProgress, Banner, icons/
   auth/
     useAuth.ts             # register / login / social / magic link / biometric / logout
     useAuthDeepLink.ts     # completes social + magic link sign-in from the redirect deep link
@@ -54,8 +55,9 @@ App.tsx                    # wraps everything in Descope's <AuthProvider>
    export const DESCOPE_PROJECT_ID = 'P2xxxxxxxxxxxxxxxxxxxxxxxx';
    ```
 3. In the Descope Console → **Authentication Methods**, enable **Passwords**,
-   **Magic Link**, and **OTP** (with the **WhatsApp** delivery method turned on
-   — this requires a WhatsApp Business sender configured in the Console).
+   **Magic Link**, and **OTP** with both the **Email** delivery method (used by
+   the registration wizard) and **WhatsApp** (requires a WhatsApp Business
+   sender configured in the Console) turned on.
 4. In **Authentication Methods → Social**, configure the **Apple**, **Microsoft**,
    **Google**, and **Facebook** OAuth providers (client IDs/secrets from each
    provider).
@@ -110,12 +112,34 @@ Passkeys / WebAuthn).
 
 ## 5. How each auth method flows
 
-- **Email/password** → `useAuth().signUpWithEmail` / `signInWithEmail` →
+- **Register** → `RegisterScreen` walks a 5-step wizard:
+  1. *Personal information* (name, DOB, zip, email, phone) → `startRegistration`
+     calls `descope.otp.signUp.email`, creating an unverified user and emailing
+     a 6-digit code.
+  2. *Verify email* → `verifyRegistrationCode` calls `descope.otp.verify.email`,
+     which returns a session — held in local state, **not** applied yet (so the
+     app doesn't jump into the Portal mid-wizard).
+  3. *Review your information* — read-only confirmation, editable by going
+     back to step 1.
+  4. *Set a password* → `completeRegistration` calls `descope.password.update`
+     with the held session token, attaching a password to the account.
+  5. *Success* → tapping "Continue" finally calls `manageSession` (+ the
+     biometric-enrollment prompt), which is what shows the Portal.
+
+  Date of birth and zip code are collected by the UI but **not yet persisted**
+  — Descope's client-side `User` type only supports name/email/phone. Storing
+  them as custom user attributes needs either a Descope Flow action or the
+  server-side Management SDK; wiring that up is a follow-up once the
+  corresponding Descope Flow exists.
+- **Email/password sign-in** → `useAuth().signInWithEmail` →
   `manageSession(resp.data)` sets the active session → app shows the Portal.
 - **Social** → `signInWithOAuth(provider)` opens the browser; on return
   `useAuthDeepLink` exchanges the `code` and sets the session.
-- **Magic link** → `signInWithMagicLink` / `signUpWithMagicLink` emails a link;
-  on return `useAuthDeepLink` verifies the `t` token and sets the session.
+- **Magic link** → `signInOrUpWithMagicLink` (works for new and returning
+  members) emails a link; on return `useAuthDeepLink` verifies the `t` token
+  and sets the session.
+- **Forgot password** → `requestPasswordReset` calls `descope.password.sendReset`,
+  inline on the Login screen.
 - **WhatsApp** → `WhatsAppScreen` collects a phone number, sends a code via
   `sendWhatsAppOtp`, then `verifyWhatsAppOtp` exchanges the entered code for a
   session.
@@ -138,6 +162,9 @@ ID → Matching Face**.
 ## Notes & limitations
 
 - This is a POC. There is intentionally no backend — Descope **is** the backend.
+- **TODO:** persist date of birth / zip code (collected in the Register wizard)
+  as Descope custom user attributes once the corresponding Descope Flow is
+  built — see "How each auth method flows → Register" above.
 - iOS builds require a Mac; on Windows you can build and run the Android app.
 - For App Store release, Apple requires **native** *Sign in with Apple*; the
   passkey Flow path (with the Apple capability) satisfies this. The web-OAuth

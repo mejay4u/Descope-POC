@@ -1,7 +1,7 @@
 /**
  * Completes web-based OAuth (social) and email magic link sign-in.
  *
- * signInWithOAuth() and signInWithMagicLink() both send the user out of the
+ * signInWithOAuth() and signInOrUpWithMagicLink() both send the user out of the
  * app (browser / email client) with a redirect back to AUTH_REDIRECT_URL
  * (memberportal://auth?code=... or ?t=...). When the OS re-opens the app with
  * that deep link, we pull out the `code` (OAuth) or `t` (magic link) param and

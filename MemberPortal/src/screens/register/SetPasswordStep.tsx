@@ -16,11 +16,16 @@ export default function SetPasswordStep({ email, onCreateAccount, busy }: Props)
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // These mirror the Descope project's password policy (Authentication
+  // Methods → Passwords). Keep them in sync — a rule that's enforced
+  // server-side but missing here lets the user submit a password that passes
+  // this checklist yet gets rejected with "Password update failed".
   const rules = [
     {
       label: 'Must be between 8 and 20 characters',
       valid: password.length >= 8 && password.length <= 20,
     },
+    { label: 'At least one lowercase letter (a–z)', valid: /[a-z]/.test(password) },
     { label: 'At least one uppercase letter (A–Z)', valid: /[A-Z]/.test(password) },
     { label: 'At least one numeric digit (0–9)', valid: /[0-9]/.test(password) },
     {

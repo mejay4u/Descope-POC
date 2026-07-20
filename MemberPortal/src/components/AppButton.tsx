@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   StyleSheet,
   Text,
@@ -31,41 +32,56 @@ export default function AppButton({
   style,
 }: Props) {
   const isDisabled = disabled || loading;
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const animateTo = (toValue: number) => {
+    Animated.spring(scale, {
+      toValue,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 6,
+    }).start();
+  };
 
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={isDisabled}
-      style={({ pressed }) => [
-        styles.base,
-        variant === 'primary' && styles.primary,
-        variant === 'secondary' && styles.secondary,
-        variant === 'ghost' && styles.ghost,
-        pressed && !isDisabled && styles.pressed,
-        isDisabled && styles.disabled,
-        style,
-      ]}>
-      {loading ? (
-        <ActivityIndicator
-          color={variant === 'primary' ? colors.white : colors.brand}
-        />
-      ) : (
-        <View style={styles.content}>
-          {icon ? <View style={styles.icon}>{icon}</View> : null}
-          <Text
-            style={[
-              styles.label,
-              variant === 'primary' ? styles.labelLight : styles.labelDark,
-            ]}>
-            {label}
-          </Text>
-        </View>
-      )}
-    </Pressable>
+    <Animated.View style={[styles.wrapper, { transform: [{ scale }] }]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={() => !isDisabled && animateTo(0.97)}
+        onPressOut={() => !isDisabled && animateTo(1)}
+        disabled={isDisabled}
+        style={({ pressed }) => [
+          styles.base,
+          variant === 'primary' && styles.primary,
+          variant === 'secondary' && styles.secondary,
+          variant === 'ghost' && styles.ghost,
+          pressed && !isDisabled && styles.pressed,
+          isDisabled && styles.disabled,
+          style,
+        ]}>
+        {loading ? (
+          <ActivityIndicator
+            color={variant === 'primary' ? colors.white : colors.brand}
+          />
+        ) : (
+          <View style={styles.content}>
+            {icon ? <View style={styles.icon}>{icon}</View> : null}
+            <Text
+              style={[
+                styles.label,
+                variant === 'primary' ? styles.labelLight : styles.labelDark,
+              ]}>
+              {label}
+            </Text>
+          </View>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: { width: '100%' },
   base: {
     width: '100%',
     height: 52,

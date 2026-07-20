@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
+  Animated,
   StyleSheet,
   Text,
   TextInput,
@@ -13,13 +14,55 @@ type Props = TextInputProps & {
   errorText?: string;
 };
 
-export default function TextField({ label, errorText, style, ...rest }: Props) {
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
+
+export default function TextField({
+  label,
+  errorText,
+  style,
+  onFocus,
+  onBlur,
+  ...rest
+}: Props) {
+  const focusAnim = useRef(new Animated.Value(0)).current;
+
+  // Untyped event param: Animated.createAnimatedComponent(TextInput) widens
+  // onFocus/onBlur to generic FocusEvent/BlurEvent, which don't line up with
+  // TextInputProps' NativeSyntheticEvent<TextInputFocusEventData> — but we
+  // only ever forward the event through, never read it.
+  const handleFocus = (e: any) => {
+    Animated.timing(focusAnim, {
+      toValue: 1,
+      duration: 150,
+      useNativeDriver: false,
+    }).start();
+    onFocus?.(e);
+  };
+
+  const handleBlur = (e: any) => {
+    Animated.timing(focusAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: false,
+    }).start();
+    onBlur?.(e);
+  };
+
+  const borderColor = errorText
+    ? colors.danger
+    : focusAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [colors.border, colors.brand],
+      });
+
   return (
     <View style={styles.wrap}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput
+      <AnimatedTextInput
         placeholderTextColor={colors.textMuted}
-        style={[styles.input, !!errorText && styles.inputError, style]}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        style={[styles.input, { borderColor }, style]}
         {...rest}
       />
       {!!errorText && <Text style={styles.error}>{errorText}</Text>}
@@ -40,6 +83,5 @@ const styles = StyleSheet.create({
     color: colors.text,
     backgroundColor: colors.surface,
   },
-  inputError: { borderColor: colors.danger },
   error: { color: colors.danger, fontSize: 13, marginTop: spacing.xs },
 });

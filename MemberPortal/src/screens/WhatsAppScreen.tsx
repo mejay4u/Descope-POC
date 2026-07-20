@@ -6,11 +6,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import TextField from '../components/TextField';
 import AppButton from '../components/AppButton';
+import Banner from '../components/Banner';
 import { useAuth } from '../auth/useAuth';
 import { colors, spacing, typography } from '../theme';
 import type { AuthStackParamList } from '../navigation/types';
@@ -82,11 +82,7 @@ export default function WhatsAppScreen({ navigation }: Props) {
               : `We sent a code to ${phone.trim()}.`}
           </Text>
 
-          {!!error && (
-            <View style={styles.banner}>
-              <Text style={styles.bannerText}>{error}</Text>
-            </View>
-          )}
+          {!!error && <Banner variant="error">{error}</Banner>}
 
           {step === 'phone' ? (
             <>
@@ -139,15 +135,6 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   title: { ...typography.title },
   subtitle: { ...typography.subtitle, marginTop: spacing.xs, marginBottom: spacing.lg },
-  banner: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  bannerText: { color: colors.danger, fontSize: 14 },
   linkText: {
     textAlign: 'center',
     color: colors.brand,

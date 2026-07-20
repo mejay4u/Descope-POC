@@ -11,6 +11,7 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import TextField from '../components/TextField';
 import AppButton from '../components/AppButton';
+import Banner from '../components/Banner';
 import MethodTile from '../components/MethodTile';
 import AppleIcon from '../components/icons/AppleIcon';
 import MicrosoftIcon from '../components/icons/MicrosoftIcon';
@@ -121,18 +122,12 @@ export default function LoginScreen({ navigation }: Props) {
           <Text style={styles.title}>Welcome back</Text>
           <Text style={styles.subtitle}>Sign in to your Member Portal.</Text>
 
-          {!!error && (
-            <View style={styles.banner}>
-              <Text style={styles.bannerText}>{error}</Text>
-            </View>
-          )}
+          {!!error && <Banner variant="error">{error}</Banner>}
 
           {magicLinkSent && (
-            <View style={styles.successBanner}>
-              <Text style={styles.successText}>
-                Magic link sent — check {email.trim()} to finish signing in.
-              </Text>
-            </View>
+            <Banner variant="success">
+              Magic link sent — check {email.trim()} to finish signing in.
+            </Banner>
           )}
 
           <View style={styles.form}>
@@ -246,24 +241,6 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   title: { ...typography.title },
   subtitle: { ...typography.subtitle, marginTop: spacing.xs, marginBottom: spacing.lg },
-  banner: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  bannerText: { color: colors.danger, fontSize: 14 },
-  successBanner: {
-    backgroundColor: colors.brandSoft,
-    borderColor: colors.brand,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  successText: { color: colors.brandDark, fontSize: 14, fontWeight: '600' },
   form: { marginBottom: spacing.md },
   dividerRow: {
     flexDirection: 'row',

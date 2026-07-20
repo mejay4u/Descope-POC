@@ -12,6 +12,7 @@ import {
   useHostedFlowUrl,
   useSession,
 } from '@descope/react-native-sdk';
+import Banner from '../components/Banner';
 import { promptEnableBiometricLogin } from '../auth/biometricStore';
 import { AUTH_REDIRECT_URL, PASSKEY_FLOW_ID } from '../config';
 import { colors, spacing, typography } from '../theme';
@@ -39,11 +40,7 @@ export default function PasskeyScreen({ navigation, route }: Props) {
     <SafeAreaView style={styles.safe}>
       <Text style={styles.title}>{title}</Text>
 
-      {!!error && (
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>{error}</Text>
-        </View>
-      )}
+      {!!error && <Banner variant="error">{error}</Banner>}
 
       <View style={styles.flowWrap}>
         {!ready && !error && (
@@ -84,15 +81,6 @@ export default function PasskeyScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg, padding: spacing.lg },
   title: { ...typography.title, marginBottom: spacing.md },
-  banner: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  bannerText: { color: colors.danger, fontSize: 14 },
   flowWrap: { flex: 1, borderRadius: 16, overflow: 'hidden' },
   flow: { flex: 1 },
   loading: {

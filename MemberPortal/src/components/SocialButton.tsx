@@ -1,23 +1,37 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing } from '../theme';
+import AppleIcon from './icons/AppleIcon';
+import MicrosoftIcon from './icons/MicrosoftIcon';
+import GoogleIcon from './icons/GoogleIcon';
 
 export type SocialProvider = 'apple' | 'microsoft' | 'google';
 
 const CONFIG: Record<
   SocialProvider,
-  { label: string; glyph: string; bg: string; fg: string; border?: string }
+  {
+    label: string;
+    icon: (props: { size: number }) => React.ReactElement;
+    bg: string;
+    fg: string;
+    border?: string;
+  }
 > = {
-  apple: { label: 'Continue with Apple', glyph: '', bg: colors.apple, fg: '#FFFFFF' },
+  apple: {
+    label: 'Continue with Apple',
+    icon: ({ size }) => <AppleIcon size={size} color="#FFFFFF" />,
+    bg: colors.apple,
+    fg: '#FFFFFF',
+  },
   microsoft: {
     label: 'Continue with Microsoft',
-    glyph: '⊞', // ⊞ window-like glyph as a lightweight stand-in
+    icon: ({ size }) => <MicrosoftIcon size={size} />,
     bg: colors.microsoft,
     fg: '#FFFFFF',
   },
   google: {
     label: 'Continue with Google',
-    glyph: 'G',
+    icon: ({ size }) => <GoogleIcon size={size} />,
     bg: colors.google,
     fg: '#3C4043',
     border: colors.googleBorder,
@@ -55,7 +69,7 @@ export default function SocialButton({
         <ActivityIndicator color={cfg.fg} />
       ) : (
         <>
-          <Text style={[styles.glyph, { color: cfg.fg }]}>{cfg.glyph}</Text>
+          <View style={styles.glyph}>{cfg.icon({ size: 18 })}</View>
           <Text style={[styles.label, { color: cfg.fg }]}>{cfg.label}</Text>
         </>
       )}
@@ -72,7 +86,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.sm,
   },
-  glyph: { fontSize: 18, fontWeight: '700', marginRight: spacing.sm },
+  glyph: { marginRight: spacing.sm, alignItems: 'center', justifyContent: 'center' },
   label: { fontSize: 16, fontWeight: '600' },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.5 },

@@ -21,6 +21,7 @@ import {
   disableBiometricLogin,
   enableBiometricLogin,
   getBiometricRefreshToken,
+  hasBiometricLogin,
   promptEnableBiometricLogin,
 } from './biometricStore';
 
@@ -123,11 +124,18 @@ export function useAuth() {
   }, [service, manageSession]);
 
   const signOut = useCallback(async (): Promise<void> => {
-    await service.logout(session?.refreshJwt);
-    // Deliberately does NOT clear the biometric-protected refresh token —
-    // that's what lets "Sign in with Biometrics" on the Login screen work
-    // *after* signing out. It's only removed via the Portal's explicit
-    // toggle, or automatically if it's later found to be invalid.
+    // If biometric sign-in is enabled, do NOT call the server-side logout:
+    // `descope.logout` REVOKES the refresh token, and that's the exact token
+    // biometric login later feeds to `descope.refresh` to re-authenticate.
+    // Revoking it here is what caused "Your saved sign-in expired" on the
+    // next biometric attempt. With biometrics on, signing out just locks the
+    // app locally (clearSession) and leaves the token valid so Face ID /
+    // fingerprint can unlock it again. A full server-side logout only happens
+    // when biometrics aren't enabled.
+    const biometricEnabled = await hasBiometricLogin();
+    if (!biometricEnabled) {
+      await service.logout(session?.refreshJwt);
+    }
     await clearSession();
   }, [service, session, clearSession]);
 

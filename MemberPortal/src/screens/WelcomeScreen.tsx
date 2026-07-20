@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -25,6 +26,8 @@ export default function WelcomeScreen({ navigation }: Props) {
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
   const [busy, setBusy] = useState(false);
+  const heroAnim = useRef(new Animated.Value(0)).current;
+  const actionsAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     (async () => {
@@ -36,6 +39,13 @@ export default function WelcomeScreen({ navigation }: Props) {
       setBioName(biometryLabel(supported));
     })();
   }, []);
+
+  useEffect(() => {
+    Animated.stagger(120, [
+      Animated.timing(heroAnim, { toValue: 1, duration: 420, useNativeDriver: true }),
+      Animated.timing(actionsAnim, { toValue: 1, duration: 420, useNativeDriver: true }),
+    ]).start();
+  }, [heroAnim, actionsAnim]);
 
   const onBiometric = async () => {
     setBusy(true);
@@ -49,7 +59,21 @@ export default function WelcomeScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.hero}>
+      <Animated.View
+        style={[
+          styles.hero,
+          {
+            opacity: heroAnim,
+            transform: [
+              {
+                translateY: heroAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [16, 0],
+                }),
+              },
+            ],
+          },
+        ]}>
         <View style={styles.logo}>
           <Text style={styles.logoMark}>M</Text>
         </View>
@@ -57,9 +81,23 @@ export default function WelcomeScreen({ navigation }: Props) {
         <Text style={styles.subtitle}>
           Secure access to your membership, powered by Descope.
         </Text>
-      </View>
+      </Animated.View>
 
-      <View style={styles.actions}>
+      <Animated.View
+        style={[
+          styles.actions,
+          {
+            opacity: actionsAnim,
+            transform: [
+              {
+                translateY: actionsAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [16, 0],
+                }),
+              },
+            ],
+          },
+        ]}>
         <AppButton
           label="Sign In"
           onPress={() => navigation.navigate('Login')}
@@ -96,7 +134,7 @@ export default function WelcomeScreen({ navigation }: Props) {
             loading={busy}
           />
         )}
-      </View>
+      </Animated.View>
 
       <Text style={styles.footer}>
         By continuing you agree to the Terms and Privacy Policy.

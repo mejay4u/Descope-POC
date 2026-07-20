@@ -1,5 +1,5 @@
-import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useRef } from 'react';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing } from '../theme';
 
 type Props = {
@@ -13,33 +13,47 @@ type Props = {
 /** A compact sign-in method tile used in the "or continue with" grid. */
 export default function MethodTile({ icon, label, onPress, loading, disabled }: Props) {
   const isDisabled = disabled || loading;
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const animateTo = (toValue: number) => {
+    Animated.spring(scale, {
+      toValue,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 6,
+    }).start();
+  };
 
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={isDisabled}
-      style={({ pressed }) => [
-        styles.tile,
-        pressed && !isDisabled && styles.pressed,
-        isDisabled && styles.disabled,
-      ]}>
-      {loading ? (
-        <ActivityIndicator color={colors.brand} />
-      ) : (
-        <>
-          <View style={styles.icon}>{icon}</View>
-          <Text style={styles.label} numberOfLines={1}>
-            {label}
-          </Text>
-        </>
-      )}
-    </Pressable>
+    <Animated.View style={[styles.wrapper, { transform: [{ scale }] }]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={() => !isDisabled && animateTo(0.95)}
+        onPressOut={() => !isDisabled && animateTo(1)}
+        disabled={isDisabled}
+        style={({ pressed }) => [
+          styles.tile,
+          pressed && !isDisabled && styles.pressed,
+          isDisabled && styles.disabled,
+        ]}>
+        {loading ? (
+          <ActivityIndicator color={colors.brand} />
+        ) : (
+          <>
+            <View style={styles.icon}>{icon}</View>
+            <Text style={styles.label} numberOfLines={1}>
+              {label}
+            </Text>
+          </>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: { width: '48%', marginBottom: spacing.sm },
   tile: {
-    width: '48%',
     height: 54,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -48,7 +62,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
   },
   icon: { marginRight: spacing.xs },
   label: { fontSize: 14, fontWeight: '600', color: colors.text },

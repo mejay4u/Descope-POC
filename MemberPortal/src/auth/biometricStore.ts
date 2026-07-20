@@ -11,6 +11,7 @@
  *
  * The refresh token never leaves the secure enclave-backed storage unprotected.
  */
+import { Alert } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 
 const SERVICE = 'com.memberportal.descope.biometric';
@@ -85,5 +86,43 @@ export function biometryLabel(type: Keychain.BIOMETRY_TYPE | null): string {
       return 'Fingerprint';
     default:
       return 'Biometrics';
+  }
+}
+
+/**
+ * After a successful sign-in, ask the user — never silently — whether they'd
+ * like to enable biometric sign-in for next time. No-ops if biometry isn't
+ * supported on the device or is already enabled.
+ */
+export async function promptEnableBiometricLogin(refreshJwt?: string): Promise<void> {
+  if (!refreshJwt) {
+    return;
+  }
+  try {
+    const [supported, alreadyEnabled] = await Promise.all([
+      getSupportedBiometry(),
+      hasBiometricLogin(),
+    ]);
+    if (!supported || alreadyEnabled) {
+      return;
+    }
+    const label = biometryLabel(supported);
+    Alert.alert(
+      `Enable ${label}?`,
+      `Sign in faster next time using ${label} instead of your password.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Enable',
+          onPress: () => {
+            enableBiometricLogin(refreshJwt).catch(() => {
+              // Non-fatal: the user can enable it later from the portal.
+            });
+          },
+        },
+      ],
+    );
+  } catch {
+    // Non-fatal: the user can enable it later from the portal.
   }
 }

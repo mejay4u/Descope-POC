@@ -7,15 +7,16 @@
 import { useCallback } from 'react';
 import { Linking } from 'react-native';
 import { useDescope, useSession } from '@descope/react-native-sdk';
-import { OAUTH_REDIRECT_URL } from '../config';
+import { AUTH_REDIRECT_URL } from '../config';
 import {
-  enableBiometricLogin,
   disableBiometricLogin,
   getBiometricRefreshToken,
+  promptEnableBiometricLogin,
 } from './biometricStore';
-import type { SocialProvider } from '../components/SocialButton';
 
 export type AuthResult = { ok: true } | { ok: false; error: string };
+
+export type SocialProvider = 'apple' | 'microsoft' | 'google';
 
 // Descope OAuth provider ids.
 const PROVIDER_ID: Record<SocialProvider, string> = {
@@ -24,7 +25,7 @@ const PROVIDER_ID: Record<SocialProvider, string> = {
   google: 'google',
 };
 
-function messageFor(e: unknown, fallback: string): string {
+export function messageFor(e: unknown, fallback: string): string {
   const err = e as { errorDescription?: string; message?: string } | undefined;
   return err?.errorDescription || err?.message || fallback;
 }
@@ -32,17 +33,6 @@ function messageFor(e: unknown, fallback: string): string {
 export function useAuth() {
   const descope = useDescope();
   const { manageSession, clearSession, session } = useSession();
-
-  /** Persist the current session's refresh token behind biometrics. */
-  const persistBiometric = useCallback(async (jwt: { refreshJwt?: string }) => {
-    try {
-      if (jwt.refreshJwt) {
-        await enableBiometricLogin(jwt.refreshJwt);
-      }
-    } catch {
-      // Non-fatal: biometric opt-in can be retried later from the portal.
-    }
-  }, []);
 
   const signUpWithEmail = useCallback(
     async (
@@ -59,13 +49,13 @@ export function useAuth() {
           return { ok: false, error: resp.error?.errorDescription ?? 'Sign up failed.' };
         }
         await manageSession(resp.data);
-        await persistBiometric(resp.data);
+        await promptEnableBiometricLogin(resp.data.refreshJwt);
         return { ok: true };
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Sign up failed.') };
       }
     },
-    [descope, manageSession, persistBiometric],
+    [descope, manageSession],
   );
 
   const signInWithEmail = useCallback(
@@ -79,26 +69,26 @@ export function useAuth() {
           };
         }
         await manageSession(resp.data);
-        await persistBiometric(resp.data);
+        await promptEnableBiometricLogin(resp.data.refreshJwt);
         return { ok: true };
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Invalid email or password.') };
       }
     },
-    [descope, manageSession, persistBiometric],
+    [descope, manageSession],
   );
 
   /**
    * Start web-based OAuth. Opens the provider in the system browser; the app is
-   * re-entered via the OAUTH_REDIRECT_URL deep link, which is exchanged for a
-   * session in useOAuthDeepLink().
+   * re-entered via the AUTH_REDIRECT_URL deep link, which is exchanged for a
+   * session in useAuthDeepLink().
    */
   const signInWithOAuth = useCallback(
     async (provider: SocialProvider): Promise<AuthResult> => {
       try {
         const resp = await descope.oauth.start(
           PROVIDER_ID[provider],
-          OAUTH_REDIRECT_URL,
+          AUTH_REDIRECT_URL,
         );
         const url = (resp.data as { url?: string } | undefined)?.url;
         if (!resp.ok || !url) {
@@ -111,6 +101,50 @@ export function useAuth() {
         return { ok: true };
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Could not start social sign-in.') };
+      }
+    },
+    [descope],
+  );
+
+  /**
+   * Email magic link. Sends a one-time sign-in link; the session is created
+   * later when the user taps the link and the app receives the
+   * AUTH_REDIRECT_URL deep link (handled in useAuthDeepLink()).
+   */
+  const signInWithMagicLink = useCallback(
+    async (email: string): Promise<AuthResult> => {
+      try {
+        const resp = await descope.magicLink.signIn.email(email, AUTH_REDIRECT_URL);
+        if (!resp.ok) {
+          return {
+            ok: false,
+            error: resp.error?.errorDescription ?? 'Could not send magic link.',
+          };
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: messageFor(e, 'Could not send magic link.') };
+      }
+    },
+    [descope],
+  );
+
+  const signUpWithMagicLink = useCallback(
+    async (name: string, email: string): Promise<AuthResult> => {
+      try {
+        const resp = await descope.magicLink.signUp.email(email, AUTH_REDIRECT_URL, {
+          name,
+          email,
+        });
+        if (!resp.ok) {
+          return {
+            ok: false,
+            error: resp.error?.errorDescription ?? 'Could not send magic link.',
+          };
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: messageFor(e, 'Could not send magic link.') };
       }
     },
     [descope],
@@ -133,12 +167,11 @@ export function useAuth() {
         };
       }
       await manageSession(resp.data);
-      await persistBiometric(resp.data);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: messageFor(e, 'Biometric sign-in failed.') };
     }
-  }, [descope, manageSession, persistBiometric]);
+  }, [descope, manageSession]);
 
   const signOut = useCallback(async (): Promise<void> => {
     try {
@@ -154,6 +187,8 @@ export function useAuth() {
     signUpWithEmail,
     signInWithEmail,
     signInWithOAuth,
+    signInWithMagicLink,
+    signUpWithMagicLink,
     signInWithBiometrics,
     signOut,
   };

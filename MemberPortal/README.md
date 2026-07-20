@@ -141,7 +141,13 @@ case a future feature needs it again:
   3. *Review your information* — read-only confirmation, editable by going
      back to step 1.
   4. *Set a password* → `completeRegistration` calls `descope.password.update`
-     with the held session token, attaching a password to the account.
+     with the held session token, attaching a password to the account. The
+     on-screen requirements checklist is generated from the **live Descope
+     password policy** (`descope.password.policy()`, fetched up front by
+     `RegisterScreen`), so it can never drift from what the server enforces —
+     the only client-only rule is the max length cap (`MAX_LENGTH` in
+     `SetPasswordStep`), since Descope's policy defines a minimum but no
+     maximum.
   5. *Success* → tapping "Continue" calls `finishRegistration`, which finally
      applies the held session (`manageSession` + the biometric-enrollment
      prompt) — that's what shows the Portal.

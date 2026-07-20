@@ -27,6 +27,32 @@ export type RegistrationDetails = {
   phone?: string;
 };
 
+/**
+ * The character-class requirements Descope enforces server-side. Mirrors the
+ * Console's Authentication Methods → Passwords → Password Policy checkboxes.
+ * Note: Descope's policy has no maximum length — that's a client-only cap.
+ */
+export type PasswordPolicy = {
+  minLength: number;
+  lowercase: boolean;
+  uppercase: boolean;
+  number: boolean;
+  nonAlphanumeric: boolean;
+};
+
+/**
+ * Fallback used if the live policy can't be fetched (offline, etc.). Kept in
+ * sync with the current Descope Console configuration so the checklist stays
+ * correct even without a network round-trip.
+ */
+export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
+  minLength: 8,
+  lowercase: true,
+  uppercase: true,
+  number: true,
+  nonAlphanumeric: true,
+};
+
 function messageFor(e: unknown, fallback: string): string {
   const err = e as { errorDescription?: string; message?: string } | undefined;
   return err?.errorDescription || err?.message || fallback;
@@ -49,6 +75,29 @@ export function createDescopeService(sdk: DescopeSdk) {
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Invalid email or password.') };
       }
+    },
+
+    /**
+     * The live password policy configured in the Descope Console. Public
+     * endpoint (no auth needed). Falls back to DEFAULT_PASSWORD_POLICY so the
+     * caller always gets a usable policy to render a checklist from.
+     */
+    async getPasswordPolicy(): Promise<PasswordPolicy> {
+      try {
+        const resp = await sdk.password.policy();
+        if (resp.ok && resp.data) {
+          return {
+            minLength: resp.data.minLength,
+            lowercase: resp.data.lowercase,
+            uppercase: resp.data.uppercase,
+            number: resp.data.number,
+            nonAlphanumeric: resp.data.nonAlphanumeric,
+          };
+        }
+      } catch {
+        // fall through to the default policy below
+      }
+      return DEFAULT_PASSWORD_POLICY;
     },
 
     async requestPasswordReset(email: string): Promise<ServiceResult> {

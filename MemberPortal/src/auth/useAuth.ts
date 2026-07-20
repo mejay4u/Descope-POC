@@ -11,7 +11,12 @@ import { useCallback } from 'react';
 import { useSession } from '@descope/react-native-sdk';
 import type { JWTResponse } from '@descope/core-js-sdk';
 import { useDescopeService } from '../services/useDescopeService';
-import type { RegistrationDetails, ServiceResult, VerifyResult } from '../services/descopeService';
+import type {
+  PasswordPolicy,
+  RegistrationDetails,
+  ServiceResult,
+  VerifyResult,
+} from '../services/descopeService';
 import {
   disableBiometricLogin,
   enableBiometricLogin,
@@ -20,7 +25,7 @@ import {
 } from './biometricStore';
 
 export type AuthResult = ServiceResult;
-export type { VerifyResult, RegistrationDetails };
+export type { VerifyResult, RegistrationDetails, PasswordPolicy };
 
 export function useAuth() {
   const service = useDescopeService();
@@ -49,6 +54,8 @@ export function useAuth() {
     (email: string) => service.requestPasswordReset(email),
     [service],
   );
+
+  const getPasswordPolicy = useCallback(() => service.getPasswordPolicy(), [service]);
 
   /**
    * Multi-step registration wizard (Personal Info -> Verify Email -> Review
@@ -126,6 +133,7 @@ export function useAuth() {
     completeRegistration,
     finishRegistration,
     requestPasswordReset,
+    getPasswordPolicy,
     signInWithBiometrics,
     signOut,
   };

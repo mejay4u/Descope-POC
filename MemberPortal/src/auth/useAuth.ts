@@ -67,6 +67,11 @@ export function useAuth() {
     [service],
   );
 
+  const resendRegistrationCode = useCallback(
+    (email: string) => service.resendRegistrationCode(email),
+    [service],
+  );
+
   const completeRegistration = useCallback(
     (email: string, password: string, sessionJwt: string) =>
       service.completeRegistration(email, password, sessionJwt),
@@ -117,6 +122,7 @@ export function useAuth() {
     signInWithEmail,
     startRegistration,
     verifyRegistrationCode,
+    resendRegistrationCode,
     completeRegistration,
     finishRegistration,
     requestPasswordReset,

@@ -97,6 +97,28 @@ export function createDescopeService(sdk: DescopeSdk) {
       }
     },
 
+    /**
+     * Resends a code to a pending registration. `startRegistration`'s
+     * `otp.signUp.email` already created the user on the first call, so
+     * calling it again for a resend fails with "User already exists" — use
+     * the sign-in delivery instead, which just (re)sends a code for a loginId
+     * that's already there, verification status notwithstanding.
+     */
+    async resendRegistrationCode(email: string): Promise<ServiceResult> {
+      try {
+        const resp = await sdk.otp.signIn.email(email);
+        if (!resp.ok) {
+          return {
+            ok: false,
+            error: resp.error?.errorDescription ?? 'Could not resend the verification code.',
+          };
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: messageFor(e, 'Could not resend the verification code.') };
+      }
+    },
+
     async verifyRegistrationCode(email: string, code: string): Promise<VerifyResult> {
       try {
         const resp = await sdk.otp.verify.email(email, code);

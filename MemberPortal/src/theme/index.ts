@@ -2,9 +2,9 @@
  * Central design tokens for the Member Portal app.
  */
 export const colors = {
-  brand: '#4F46E5', // indigo
-  brandDark: '#4338CA',
-  brandSoft: '#EEF2FF',
+  brand: '#0F2A5C', // navy blue
+  brandDark: '#0A1E42',
+  brandSoft: '#E8ECF6',
   bg: '#FFFFFF',
   surface: '#F8FAFC',
   border: '#E2E8F0',

@@ -1,38 +1,54 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import TextField from '../../components/TextField';
 import AppButton from '../../components/AppButton';
 import CheckIcon from '../../components/icons/CheckIcon';
+import type { PasswordPolicy } from '../../auth/useAuth';
 import { colors, spacing } from '../../theme';
 import { sharedStyles } from './styles';
 
+// Descope's policy only defines a minimum length; this is our own client-side
+// cap on how long a password can be (also enforced via the input's maxLength).
+const MAX_LENGTH = 20;
+
 type Props = {
   email: string;
+  policy: PasswordPolicy;
   onCreateAccount: (password: string) => void;
   busy: boolean;
 };
 
-export default function SetPasswordStep({ email, onCreateAccount, busy }: Props) {
+export default function SetPasswordStep({ email, policy, onCreateAccount, busy }: Props) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // These mirror the Descope project's password policy (Authentication
-  // Methods → Passwords). Keep them in sync — a rule that's enforced
-  // server-side but missing here lets the user submit a password that passes
-  // this checklist yet gets rejected with "Password update failed".
-  const rules = [
-    {
-      label: 'Must be between 8 and 20 characters',
-      valid: password.length >= 8 && password.length <= 20,
-    },
-    { label: 'At least one lowercase letter (a–z)', valid: /[a-z]/.test(password) },
-    { label: 'At least one uppercase letter (A–Z)', valid: /[A-Z]/.test(password) },
-    { label: 'At least one numeric digit (0–9)', valid: /[0-9]/.test(password) },
-    {
-      label: 'At least one special character (e.g., @, #, $, !, %)',
-      valid: /[^A-Za-z0-9]/.test(password),
-    },
-  ];
+  // The checklist is generated from the live Descope policy (fetched in
+  // RegisterScreen), so it can never drift from what the server enforces.
+  const rules = useMemo(() => {
+    const list = [
+      {
+        label: `Must be between ${policy.minLength} and ${MAX_LENGTH} characters`,
+        valid: password.length >= policy.minLength && password.length <= MAX_LENGTH,
+      },
+    ];
+    if (policy.lowercase) {
+      list.push({ label: 'At least one lowercase letter (a–z)', valid: /[a-z]/.test(password) });
+    }
+    if (policy.uppercase) {
+      list.push({ label: 'At least one uppercase letter (A–Z)', valid: /[A-Z]/.test(password) });
+    }
+    if (policy.number) {
+      list.push({ label: 'At least one numeric digit (0–9)', valid: /[0-9]/.test(password) });
+    }
+    if (policy.nonAlphanumeric) {
+      list.push({
+        label: 'At least one special character (e.g., @, #, $, !, %)',
+        valid: /[^A-Za-z0-9]/.test(password),
+      });
+    }
+    return list;
+  }, [policy, password]);
+
   const allValid = rules.every(r => r.valid);
   const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword;
 
@@ -51,7 +67,7 @@ export default function SetPasswordStep({ email, onCreateAccount, busy }: Props)
         onChangeText={setPassword}
         secureTextEntry
         textContentType="newPassword"
-        maxLength={20}
+        maxLength={MAX_LENGTH}
       />
       <TextField
         label="Confirm password"
@@ -60,7 +76,7 @@ export default function SetPasswordStep({ email, onCreateAccount, busy }: Props)
         onChangeText={setConfirmPassword}
         secureTextEntry
         textContentType="newPassword"
-        maxLength={20}
+        maxLength={MAX_LENGTH}
         errorText={
           confirmPassword.length > 0 && !passwordsMatch ? "Passwords don't match" : undefined
         }

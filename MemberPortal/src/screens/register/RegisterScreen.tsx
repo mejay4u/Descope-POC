@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { JWTResponse } from '@descope/core-js-sdk';
 import Banner from '../../components/Banner';
-import { useAuth } from '../../auth/useAuth';
+import { useAuth, type PasswordPolicy } from '../../auth/useAuth';
+import { DEFAULT_PASSWORD_POLICY } from '../../services/descopeService';
 import { colors, spacing } from '../../theme';
 import type { AuthStackParamList } from '../../navigation/types';
 import { EMPTY_FORM, type FormState, type Step } from './types';
@@ -37,6 +38,7 @@ export default function RegisterScreen({ navigation }: Props) {
     resendRegistrationCode,
     completeRegistration,
     finishRegistration,
+    getPasswordPolicy,
   } = useAuth();
 
   const [step, setStep] = useState<Step>('personal');
@@ -44,6 +46,21 @@ export default function RegisterScreen({ navigation }: Props) {
   const [jwt, setJwt] = useState<JWTResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [passwordPolicy, setPasswordPolicy] = useState<PasswordPolicy>(DEFAULT_PASSWORD_POLICY);
+
+  // Fetch the live Descope password policy up front so the "Set a password"
+  // step's checklist always matches what the server will actually enforce.
+  useEffect(() => {
+    let active = true;
+    getPasswordPolicy().then(policy => {
+      if (active) {
+        setPasswordPolicy(policy);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [getPasswordPolicy]);
 
   const updateForm = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }));
 
@@ -150,7 +167,12 @@ export default function RegisterScreen({ navigation }: Props) {
           )}
 
           {step === 'password' && (
-            <SetPasswordStep email={form.email} onCreateAccount={onCreateAccount} busy={busy} />
+            <SetPasswordStep
+              email={form.email}
+              policy={passwordPolicy}
+              onCreateAccount={onCreateAccount}
+              busy={busy}
+            />
           )}
 
           {step === 'success' && <SuccessStep firstName={form.firstName} onFinish={onFinish} />}

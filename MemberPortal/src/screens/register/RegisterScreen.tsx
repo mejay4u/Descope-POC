@@ -91,14 +91,16 @@ export default function RegisterScreen({ navigation }: Props) {
   };
 
   const onCreateAccount = async (password: string) => {
-    if (!jwt) {
+    // password.update authenticates with the refresh token from the verify
+    // step (see descopeService.completeRegistration).
+    if (!jwt?.refreshJwt) {
       setError('Your session expired — please verify your email again.');
       setStep('verify');
       return;
     }
     setError(null);
     setBusy(true);
-    const res = await completeRegistration(form.email.trim(), password, jwt.sessionJwt);
+    const res = await completeRegistration(form.email.trim(), password, jwt.refreshJwt);
     setBusy(false);
     if (!res.ok) {
       setError(res.error);

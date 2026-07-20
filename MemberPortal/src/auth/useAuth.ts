@@ -223,7 +223,10 @@ export function useAuth() {
     } catch {
       // ignore network errors on logout
     }
-    await disableBiometricLogin();
+    // Deliberately does NOT clear the biometric-protected refresh token —
+    // that's what lets "Sign in with Face ID" on the Welcome screen work
+    // *after* signing out. It's only removed via the Portal's explicit
+    // toggle, or automatically if it's later found to be invalid.
     await clearSession();
   }, [descope, session, clearSession]);
 

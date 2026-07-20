@@ -9,7 +9,7 @@ directly to Descope's hosted service using your Project ID.
 | Feature | How it's implemented |
 | --- | --- |
 | **Welcome screen** with *Sign In* / *Create Account* buttons | `src/screens/WelcomeScreen.tsx` |
-| **Register** — 5-step wizard (personal info → verify email → review → set password → success) | `descope.otp.signUp.email` → `otp.verify.email` → `password.update` (`src/screens/RegisterScreen.tsx`) |
+| **Register** — 5-step wizard (personal info → verify email → review → set password → success) | `descope.otp.signUp.email` → `otp.verify.email` → `password.update` (`src/screens/register/`) |
 | **Login** (email + password) | `descope.password.signIn` |
 | **Forgot password** | `descope.password.sendReset` (inline on the Login screen) |
 | **Social login** — Apple, Microsoft, Google, Facebook | `descope.oauth.start` → browser → deep link → `descope.oauth.exchange` |
@@ -28,15 +28,45 @@ exists the app shows the Portal, otherwise the Welcome/Login/Register flow.
 src/
   config/index.ts          # Descope Project ID, auth redirect scheme, passkey flow ID
   theme/                   # colors, spacing, typography
-  components/              # AppButton, TextField, MethodTile, StepProgress, Banner, icons/
+  branding/                # BrandingContext (injectable logo/app name/tagline/button), DefaultLogo
+  services/
+    descopeService.ts      # framework-agnostic wrapper — every raw `descope.*` call lives here
+    useDescopeService.ts   # binds descopeService to the current useDescope() instance
+  components/              # AppButton (branding-injectable), DefaultAppButton, TextField,
+                            # MethodTile, StepProgress, Banner, icons/
   auth/
-    useAuth.ts             # register / login / social / magic link / biometric / logout
+    useAuth.ts             # React binding over descopeService — session state + biometric prompts
     useAuthDeepLink.ts     # completes social + magic link sign-in from the redirect deep link
     biometricStore.ts      # biometric-gated Keychain storage of the refresh token
   navigation/              # RootNavigator + route types
-  screens/                 # Welcome, Login, Register, Passkey, WhatsApp, Portal
-App.tsx                    # wraps everything in Descope's <AuthProvider>
+  screens/
+    register/               # RegisterScreen (orchestrator) + one file per wizard step
+    WelcomeScreen.tsx, LoginScreen.tsx, PasskeyScreen.tsx, WhatsAppScreen.tsx, PortalScreen.tsx
+App.tsx                    # wraps everything in Descope's <AuthProvider> + <BrandingProvider>
 ```
+
+### Architecture: service layer + dependency injection
+
+- **`descopeService.ts`** is the only place in the app that calls `descope.*`
+  directly. It takes the SDK instance as a constructor argument
+  (`createDescopeService(sdk)`) and returns plain async methods — no React,
+  no hooks — so it's trivial to unit test or reuse outside a component.
+  `useAuth` and `useAuthDeepLink` are thin React layers on top of it: they
+  call the service, then apply the resulting session
+  (`manageSession`/biometric-enrollment prompt), which *is* inherently
+  React-context-bound.
+- **Branding is dependency-injected via `BrandingContext`.** `App.tsx` wraps
+  the tree in `<BrandingProvider>`; screens read `appName` / `tagline` /
+  `Logo` via `useBranding()` instead of hardcoding them (see
+  `WelcomeScreen.tsx`). `AppButton` is itself just a selector — it renders
+  whatever `Button` component the branding config supplies, falling back to
+  `DefaultAppButton`. To white-label the app for a different deployment,
+  pass a `value` prop into `BrandingProvider` in `App.tsx`:
+  ```tsx
+  <BrandingProvider value={{ appName: 'Acme Health', Logo: AcmeLogo }}>
+  ```
+  No screen code needs to change — every button and the Welcome screen's
+  logo/name update automatically.
 
 ## 1. Prerequisites
 
@@ -112,7 +142,8 @@ Passkeys / WebAuthn).
 
 ## 5. How each auth method flows
 
-- **Register** → `RegisterScreen` walks a 5-step wizard:
+- **Register** → `screens/register/RegisterScreen.tsx` orchestrates a 5-step
+  wizard, each step its own component in the same folder:
   1. *Personal information* (name, DOB, zip, email, phone) → `startRegistration`
      calls `descope.otp.signUp.email`, creating an unverified user and emailing
      a 6-digit code.
@@ -123,8 +154,9 @@ Passkeys / WebAuthn).
      back to step 1.
   4. *Set a password* → `completeRegistration` calls `descope.password.update`
      with the held session token, attaching a password to the account.
-  5. *Success* → tapping "Continue" finally calls `manageSession` (+ the
-     biometric-enrollment prompt), which is what shows the Portal.
+  5. *Success* → tapping "Continue" calls `finishRegistration`, which finally
+     applies the held session (`manageSession` + the biometric-enrollment
+     prompt) — that's what shows the Portal.
 
   Date of birth and zip code are collected by the UI but **not yet persisted**
   — Descope's client-side `User` type only supports name/email/phone. Storing

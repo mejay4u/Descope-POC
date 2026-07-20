@@ -10,6 +10,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import AppButton from '../components/AppButton';
 import PasskeyIcon from '../components/icons/PasskeyIcon';
 import FingerprintIcon from '../components/icons/FingerprintIcon';
+import { useBranding } from '../branding/BrandingContext';
 import { useAuth } from '../auth/useAuth';
 import {
   biometryLabel,
@@ -23,6 +24,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
 
 export default function WelcomeScreen({ navigation }: Props) {
   const { signInWithBiometrics } = useAuth();
+  const { appName, tagline, Logo } = useBranding();
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
   const [busy, setBusy] = useState(false);
@@ -74,13 +76,11 @@ export default function WelcomeScreen({ navigation }: Props) {
             ],
           },
         ]}>
-        <View style={styles.logo}>
-          <Text style={styles.logoMark}>M</Text>
+        <View style={styles.logoWrap}>
+          <Logo size={88} />
         </View>
-        <Text style={styles.title}>Member Portal</Text>
-        <Text style={styles.subtitle}>
-          Secure access to your membership, powered by Descope.
-        </Text>
+        <Text style={styles.title}>{appName}</Text>
+        <Text style={styles.subtitle}>{tagline}</Text>
       </Animated.View>
 
       <Animated.View
@@ -146,21 +146,7 @@ export default function WelcomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
   hero: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  logo: {
-    width: 88,
-    height: 88,
-    borderRadius: 24,
-    backgroundColor: colors.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.lg,
-    shadowColor: colors.brand,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  logoMark: { color: colors.white, fontSize: 44, fontWeight: '800' },
+  logoWrap: { marginBottom: spacing.lg },
   title: { ...typography.title, textAlign: 'center' },
   subtitle: {
     ...typography.subtitle,

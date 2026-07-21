@@ -114,10 +114,12 @@ export function useAuth() {
       return result;
     }
     // `descope.refresh` returns a new session (access) JWT but usually NOT a
-    // new refresh JWT. `manageSession` requires a refresh JWT, so fall back to
-    // the one we already hold. If Descope *did* rotate it, prefer the new one
-    // and re-save it so the next biometric sign-in uses a still-valid token.
-    const activeRefreshJwt = result.jwt.refreshJwt ?? refreshJwt;
+    // new refresh JWT — and it may come back as "" rather than undefined.
+    // `manageSession` throws on any falsy refresh JWT, so `||` (not `??`) is
+    // required to fall back to the token we already hold. If Descope *did*
+    // rotate it, prefer the new one and re-save it so the next biometric
+    // sign-in uses a still-valid token.
+    const activeRefreshJwt = result.jwt.refreshJwt || refreshJwt;
     await manageSession({ ...result.jwt, refreshJwt: activeRefreshJwt });
     if (result.jwt.refreshJwt) {
       await enableBiometricLogin(result.jwt.refreshJwt).catch(() => {});

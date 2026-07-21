@@ -11,7 +11,7 @@ directly to Descope's hosted service using your Project ID.
 | **Welcome screen** with *Sign In* / *Create Account* buttons | `src/screens/WelcomeScreen.tsx` |
 | **Login** — email + password, show/hide password, "Remember username", "Forgot password?" | `descope.password.signIn` / `descope.password.sendReset` (`src/screens/LoginScreen.tsx`) |
 | **Register** — 5-step wizard (personal info → verify email → review → set password → success) | `descope.otp.signUp.email` → `otp.verify.email` → `password.update` (`src/screens/register/`) |
-| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Refresh token stored in the Keychain/Keystore behind biometrics (`react-native-keychain`), then `descope.refresh`. The app **asks** before enabling it (never silently) after any successful sign-in. Shown as its own button on the Login screen once enabled. |
+| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Explicit OS biometric prompt (`react-native-biometrics`) gating a Keychain-stored refresh token (`react-native-keychain`), then `descope.refresh` + `descope.me`. The app **asks** before enabling it (never silently) after any successful sign-in. Shown as its own button on the Login screen once enabled. |
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, sign out |
 
 Session state is gated in `src/navigation/RootNavigator.tsx`: while a session
@@ -158,17 +158,23 @@ case a future feature needs it again:
   server-side Management SDK; wiring that up is a follow-up once the
   corresponding Descope Flow exists.
 - **Biometric** → after any successful sign-in the app *asks* (native confirm
-  dialog, never silent) whether to save the refresh token behind biometrics.
-  The Login screen then shows a "Sign in with Face ID/Fingerprint" button,
-  which reads the token (OS prompt) and calls `descope.refresh`.
+  dialog, never silent) whether to save the refresh token for biometric
+  sign-in. The Login screen then shows a "Sign in with Face ID/Fingerprint"
+  button, which shows an explicit OS biometric prompt
+  (`react-native-biometrics`), reads the token from the Keychain, and calls
+  `descope.refresh` (+ `descope.me` for the user profile). Signing out with
+  biometrics enabled only locks the app locally — the refresh token isn't
+  revoked server-side, which is what lets biometrics unlock it again.
 
-### Troubleshooting: biometric enrollment doesn't "stick"
-`enableBiometricLogin` does **not** require `SECURITY_LEVEL.SECURE_HARDWARE`
-(no Secure Enclave) — the iOS Simulator and some older devices don't have one,
-which used to make the Keychain write throw and silently fail. If you're
-testing Face ID in the **Simulator**, you also need to turn it on yourself:
-**Features → Face ID → Enrolled**, then approve prompts via **Features → Face
-ID → Matching Face**.
+  The prompt is app-level (LocalAuthentication / BiometricPrompt) rather than
+  Keychain access control, for two reasons: the iOS **Simulator doesn't
+  enforce Keychain biometric access control** (reads silently succeed with no
+  Face ID sheet), and combining both mechanisms would double-prompt on real
+  devices. The token stays encrypted at rest in the Keychain, device-only.
+
+### Troubleshooting: testing Face ID in the Simulator
+Enable it yourself: **Features → Face ID → Enrolled**, then approve the
+prompt via **Features → Face ID → Matching Face** when it appears.
 
 ## Notes & limitations
 

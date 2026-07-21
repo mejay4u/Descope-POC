@@ -13,41 +13,49 @@
  */
 import { Alert } from 'react-native';
 import * as Keychain from 'react-native-keychain';
+import ReactNativeBiometrics from 'react-native-biometrics';
 
 const SERVICE = 'com.memberportal.descope.biometric';
 const ACCOUNT = 'descope-refresh-jwt';
 
+const rnBiometrics = new ReactNativeBiometrics();
+
 /**
- * Persist the refresh JWT behind a biometric lock.
+ * Persist the refresh JWT for biometric sign-in.
  *
- * Note: this deliberately does NOT force `SECURITY_LEVEL.SECURE_HARDWARE` —
- * simulators (and some older devices) have no Secure Enclave, so requiring it
- * makes this call throw and silently fail to save anything. Requiring
- * biometric auth via `ACCESS_CONTROL.BIOMETRY_ANY` is enough of a guarantee
- * here; the OS still uses hardware backing when it's available.
+ * The item is stored WITHOUT Keychain biometric access control, and reads are
+ * gated by an explicit OS biometric prompt instead (see
+ * getBiometricRefreshToken). Two reasons for this app-level-gating pattern:
+ *   1. The iOS Simulator doesn't enforce Keychain access control — reads
+ *      silently succeed with no Face ID prompt, so "biometric" sign-in was
+ *      invisible there.
+ *   2. Gating with BOTH an explicit prompt and Keychain access control would
+ *      show two Face ID sheets in a row on real devices.
+ * The token remains encrypted at rest in the Keychain, device-only.
  */
 export async function enableBiometricLogin(refreshJwt: string): Promise<void> {
   await Keychain.setGenericPassword(ACCOUNT, refreshJwt, {
     service: SERVICE,
-    accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY,
     accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   });
 }
 
 /**
- * Read the stored refresh JWT. Triggers the OS biometric prompt.
- * Returns null if the user cancels or nothing is stored.
+ * Read the stored refresh JWT, gated behind an explicit OS biometric prompt
+ * (LocalAuthentication / BiometricPrompt — shown on real devices AND the
+ * Simulator, unlike Keychain access control).
+ * Returns null if the user cancels, the scan fails, or nothing is stored.
  */
 export async function getBiometricRefreshToken(): Promise<string | null> {
   try {
-    const creds = await Keychain.getGenericPassword({
-      service: SERVICE,
-      authenticationPrompt: {
-        title: 'Sign in to Member Portal',
-        subtitle: 'Confirm your identity',
-        cancel: 'Cancel',
-      },
+    const { success } = await rnBiometrics.simplePrompt({
+      promptMessage: 'Sign in to Member Portal',
+      cancelButtonText: 'Cancel',
     });
+    if (!success) {
+      return null;
+    }
+    const creds = await Keychain.getGenericPassword({ service: SERVICE });
     return creds ? creds.password : null;
   } catch {
     // User cancelled or biometry failed.

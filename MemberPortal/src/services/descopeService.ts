@@ -237,7 +237,18 @@ export function createDescopeService(sdk: DescopeSdk) {
         if (!resp.ok || !resp.data) {
           return { ok: false, error: 'Your saved sign-in expired. Please log in again.' };
         }
-        return { ok: true, jwt: resp.data };
+        let jwt = resp.data;
+        // The refresh response carries only tokens — no user profile — but
+        // manageSession requires `user` (and a refresh JWT) to be present.
+        // Fetch the profile with the same refresh token and merge it in.
+        if (!jwt.user) {
+          const meResp = await sdk.me(refreshJwt);
+          if (!meResp.ok || !meResp.data) {
+            return { ok: false, error: 'Could not load your profile. Please log in again.' };
+          }
+          jwt = { ...jwt, user: meResp.data };
+        }
+        return { ok: true, jwt };
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Biometric sign-in failed.') };
       }

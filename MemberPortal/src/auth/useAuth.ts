@@ -103,28 +103,36 @@ export function useAuth() {
 
   /** Sign in using the biometric-protected refresh token. */
   const signInWithBiometrics = useCallback(async (): Promise<AuthResult> => {
-    const refreshJwt = await getBiometricRefreshToken();
-    if (!refreshJwt) {
-      return { ok: false, error: 'Biometric sign-in was cancelled.' };
+    try {
+      const refreshJwt = await getBiometricRefreshToken();
+      if (!refreshJwt) {
+        return { ok: false, error: 'Biometric sign-in was cancelled.' };
+      }
+      const result = await service.refreshWithToken(refreshJwt);
+      if (!result.ok) {
+        // Stored token no longer valid — clear it so the button hides.
+        await disableBiometricLogin();
+        return result;
+      }
+      // `descope.refresh` returns a new session (access) JWT but usually NOT a
+      // new refresh JWT — and it may come back as "" rather than undefined.
+      // `manageSession` throws on any falsy refresh JWT, so `||` (not `??`) is
+      // required to fall back to the token we already hold. If Descope *did*
+      // rotate it, prefer the new one and re-save it so the next biometric
+      // sign-in uses a still-valid token. (The service guarantees `user` is
+      // populated — manageSession's third requirement.)
+      const activeRefreshJwt = result.jwt.refreshJwt || refreshJwt;
+      await manageSession({ ...result.jwt, refreshJwt: activeRefreshJwt });
+      if (result.jwt.refreshJwt) {
+        await enableBiometricLogin(result.jwt.refreshJwt).catch(() => {});
+      }
+      return { ok: true };
+    } catch (e) {
+      // Never let an SDK throw escape as an unhandled rejection (red screen) —
+      // surface it as an inline error on the Login screen instead.
+      const err = e as { message?: string } | undefined;
+      return { ok: false, error: err?.message ?? 'Biometric sign-in failed.' };
     }
-    const result = await service.refreshWithToken(refreshJwt);
-    if (!result.ok) {
-      // Stored token no longer valid — clear it so the button hides.
-      await disableBiometricLogin();
-      return result;
-    }
-    // `descope.refresh` returns a new session (access) JWT but usually NOT a
-    // new refresh JWT — and it may come back as "" rather than undefined.
-    // `manageSession` throws on any falsy refresh JWT, so `||` (not `??`) is
-    // required to fall back to the token we already hold. If Descope *did*
-    // rotate it, prefer the new one and re-save it so the next biometric
-    // sign-in uses a still-valid token.
-    const activeRefreshJwt = result.jwt.refreshJwt || refreshJwt;
-    await manageSession({ ...result.jwt, refreshJwt: activeRefreshJwt });
-    if (result.jwt.refreshJwt) {
-      await enableBiometricLogin(result.jwt.refreshJwt).catch(() => {});
-    }
-    return { ok: true };
   }, [service, manageSession]);
 
   const signOut = useCallback(async (): Promise<void> => {

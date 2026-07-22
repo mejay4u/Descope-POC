@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSession } from '@descope/react-native-sdk';
 import AppButton from '../components/AppButton';
@@ -8,8 +8,10 @@ import {
   biometryLabel,
   disableBiometricLogin,
   enableBiometricLogin,
+  getBiometricAvailability,
   getSupportedBiometry,
   hasBiometricLogin,
+  showBiometricUnavailableAlert,
 } from '../auth/biometricStore';
 import { colors, radius, spacing, typography } from '../theme';
 
@@ -18,7 +20,7 @@ export default function PortalScreen() {
   const { signOut } = useAuth();
   const [bioEnabled, setBioEnabled] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
-  const [bioSupported, setBioSupported] = useState(false);
+  const [bioOsDisabled, setBioOsDisabled] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const user = session?.user;
@@ -32,10 +34,14 @@ export default function PortalScreen() {
 
   useEffect(() => {
     (async () => {
-      const supported = await getSupportedBiometry();
-      setBioSupported(!!supported);
+      const [supported, availability, enabled] = await Promise.all([
+        getSupportedBiometry(),
+        getBiometricAvailability(),
+        hasBiometricLogin(),
+      ]);
       setBioName(biometryLabel(supported));
-      setBioEnabled(await hasBiometricLogin());
+      setBioOsDisabled(!availability.available);
+      setBioEnabled(enabled);
     })();
   }, []);
 
@@ -48,6 +54,20 @@ export default function PortalScreen() {
       await disableBiometricLogin();
     }
     setBioEnabled(await hasBiometricLogin());
+  };
+
+  /**
+   * The biometric card is always shown so users know the feature exists.
+   * While biometrics is disabled at the OS level the switch is disabled, and
+   * tapping the row re-checks availability (it may have changed in Settings
+   * since mount) and shows the OS's own message if it's still off.
+   */
+  const onBiometricRowPress = async () => {
+    const availability = await getBiometricAvailability();
+    setBioOsDisabled(!availability.available);
+    if (!availability.available) {
+      showBiometricUnavailableAlert(bioName, availability.osMessage);
+    }
   };
 
   const onSignOut = async () => {
@@ -81,23 +101,28 @@ export default function PortalScreen() {
           <Row label="Member ID" value={(user?.userId || '').slice(0, 12) || '—'} />
         </View>
 
-        {bioSupported && (
-          <View style={styles.card}>
-            <View style={styles.switchRow}>
-              <View style={styles.switchText}>
-                <Text style={styles.cardTitle}>Sign in with {bioName}</Text>
-                <Text style={styles.cardSub}>
-                  Use {bioName} to sign in next time without a password.
-                </Text>
-              </View>
+        <View style={styles.card}>
+          <Pressable style={styles.switchRow} onPress={onBiometricRowPress}>
+            <View style={styles.switchText}>
+              <Text style={styles.cardTitle}>Sign in with {bioName}</Text>
+              <Text style={styles.cardSub}>
+                {bioOsDisabled
+                  ? `${bioName} is turned off for this device. Tap to see why.`
+                  : `Use ${bioName} to sign in next time without a password.`}
+              </Text>
+            </View>
+            {/* pointerEvents 'none' while OS-disabled so taps on the switch
+                fall through to the row and surface the OS message. */}
+            <View pointerEvents={bioOsDisabled ? 'none' : 'auto'}>
               <Switch
-                value={bioEnabled}
+                value={bioEnabled && !bioOsDisabled}
+                disabled={bioOsDisabled}
                 onValueChange={toggleBiometric}
                 trackColor={{ true: colors.brand, false: colors.border }}
               />
             </View>
-          </View>
-        )}
+          </Pressable>
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Quick actions</Text>

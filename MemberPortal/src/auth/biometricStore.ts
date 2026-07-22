@@ -11,7 +11,7 @@
  *
  * The refresh token never leaves the secure enclave-backed storage unprotected.
  */
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 import ReactNativeBiometrics from 'react-native-biometrics';
 
@@ -126,6 +126,22 @@ export async function getBiometricAvailability(): Promise<BiometricAvailability>
       osMessage: err?.message ? humanReadableOsMessage(err.message) : fallback,
     };
   }
+}
+
+/**
+ * Native alert shown when biometrics is disabled at the OS level: leads with
+ * the OS's own message and offers a shortcut into Settings. Used by both the
+ * Login screen (biometric button) and the Portal (biometric toggle).
+ */
+export function showBiometricUnavailableAlert(label: string, osMessage: string): void {
+  Alert.alert(
+    `Enable ${label}`,
+    `${osMessage}\n\nMember Portal uses ${label} to verify that it is you when you sign in. You can turn it on in Settings.`,
+    [
+      { text: 'Not now', style: 'cancel' },
+      { text: 'Open Settings', onPress: () => Linking.openSettings() },
+    ],
+  );
 }
 
 /**

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -23,7 +22,7 @@ import { useAuth } from '../auth/useAuth';
 import {
   biometryLabel,
   getSupportedBiometry,
-  hasBiometricLogin,
+  showBiometricUnavailableAlert,
 } from '../auth/biometricStore';
 import {
   clearRememberedEmail,
@@ -54,24 +53,16 @@ export default function LoginScreen({ navigation }: Props) {
   const [busy, setBusy] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
-  const [bioAvailable, setBioAvailable] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
   const [bioBusy, setBioBusy] = useState(false);
   const [bioFailures, setBioFailures] = useState(0);
 
   useEffect(() => {
     (async () => {
-      const [enrolled, supported, rememberedEmail] = await Promise.all([
-        hasBiometricLogin(),
+      const [supported, rememberedEmail] = await Promise.all([
         getSupportedBiometry(),
         getRememberedEmail(),
       ]);
-      // Show the button whenever biometric sign-in was enabled in the app,
-      // even if the OS currently reports biometry as unavailable (disabled in
-      // Settings, nothing enrolled, lockout) — tapping it then surfaces the
-      // OS's own error message via signInWithBiometrics instead of the
-      // feature silently vanishing.
-      setBioAvailable(enrolled);
       setBioName(biometryLabel(supported));
       if (rememberedEmail) {
         setEmail(rememberedEmail);
@@ -130,13 +121,16 @@ export default function LoginScreen({ navigation }: Props) {
       // shortcut into Settings) rather than the inline error banner. No scan
       // happened, so this doesn't count toward the 5-attempt password fallback.
       if (res.osUnavailable) {
+        showBiometricUnavailableAlert(bioName, res.error);
+        return;
+      }
+      // Biometrics works, but the user hasn't set up biometric sign-in in
+      // this app yet — point them at password sign-in, which offers to
+      // enable it on success. Doesn't count toward the fallback either.
+      if (res.notEnrolled) {
         Alert.alert(
-          `Enable ${bioName}`,
-          `${res.error}\n\nMember Portal uses ${bioName} to verify that it is you when you sign in. You can turn it on in Settings.`,
-          [
-            { text: 'Not now', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => Linking.openSettings() },
-          ],
+          `Set up ${bioName} sign-in`,
+          `Sign in with your email and password first — you'll be offered to enable ${bioName} for future sign-ins.`,
         );
         return;
       }
@@ -150,11 +144,12 @@ export default function LoginScreen({ navigation }: Props) {
       } else {
         setError(res.error);
       }
-      setBioAvailable(await hasBiometricLogin());
     }
   };
 
-  const showBioButton = bioAvailable && bioFailures < MAX_BIOMETRIC_ATTEMPTS;
+  // Always offered — so users discover biometric sign-in exists — except
+  // after the 5-attempt fallback to password for this visit.
+  const showBioButton = bioFailures < MAX_BIOMETRIC_ATTEMPTS;
 
   return (
     <SafeAreaView style={styles.safe}>

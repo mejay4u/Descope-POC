@@ -30,12 +30,19 @@ export type AuthResult = ServiceResult;
 export type { VerifyResult, RegistrationDetails, PasswordPolicy };
 
 /**
- * Biometric sign-in distinguishes OS-level unavailability (biometrics
- * disabled in Settings, nothing enrolled, lockout) from an ordinary failed
- * attempt, so the Login screen can show a native "enable it in Settings"
- * alert for the former instead of the inline error banner.
+ * Biometric sign-in distinguishes two special failures from an ordinary
+ * failed attempt, so the Login screen can react to each differently:
+ *   - osUnavailable: the OS won't allow a biometric prompt (disabled in
+ *     Settings, nothing enrolled, lockout) — show a native "enable it in
+ *     Settings" alert carrying the OS's own message.
+ *   - notEnrolled: biometrics works on the device but the user hasn't set up
+ *     biometric sign-in in this app yet (no stored token) — point them at
+ *     password sign-in, which offers enrollment on success.
  */
-export type BiometricSignInResult = AuthResult & { osUnavailable?: boolean };
+export type BiometricSignInResult = AuthResult & {
+  osUnavailable?: boolean;
+  notEnrolled?: boolean;
+};
 
 export function useAuth() {
   const service = useDescopeService();
@@ -120,6 +127,16 @@ export function useAuth() {
       const availability = await getBiometricAvailability();
       if (!availability.available) {
         return { ok: false, error: availability.osMessage, osUnavailable: true };
+      }
+      // The button is always shown so users can discover the feature — if
+      // they haven't enabled biometric sign-in yet there's no stored token,
+      // so skip the prompt and tell them how to set it up.
+      if (!(await hasBiometricLogin())) {
+        return {
+          ok: false,
+          error: 'Biometric sign-in is not set up yet.',
+          notEnrolled: true,
+        };
       }
       const refreshJwt = await getBiometricRefreshToken();
       if (!refreshJwt) {

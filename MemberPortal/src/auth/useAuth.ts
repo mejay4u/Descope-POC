@@ -20,6 +20,7 @@ import type {
 import {
   disableBiometricLogin,
   enableBiometricLogin,
+  getBiometricAvailability,
   getBiometricRefreshToken,
   hasBiometricLogin,
   promptEnableBiometricLogin,
@@ -104,6 +105,14 @@ export function useAuth() {
   /** Sign in using the biometric-protected refresh token. */
   const signInWithBiometrics = useCallback(async (): Promise<AuthResult> => {
     try {
+      // If the OS won't allow a biometric prompt right now (disabled in
+      // Settings, nothing enrolled, lockout), surface the OS's own message
+      // rather than a generic "cancelled" — the stored token stays intact so
+      // biometric sign-in works again once the user re-enables it.
+      const availability = await getBiometricAvailability();
+      if (!availability.available) {
+        return { ok: false, error: availability.osMessage };
+      }
       const refreshJwt = await getBiometricRefreshToken();
       if (!refreshJwt) {
         return { ok: false, error: 'Biometric sign-in was cancelled.' };

@@ -78,6 +78,30 @@ export async function disableBiometricLogin(): Promise<void> {
   await Keychain.resetGenericPassword({ service: SERVICE });
 }
 
+export type BiometricAvailability =
+  | { available: true }
+  | { available: false; osMessage: string };
+
+/**
+ * Whether the OS will currently allow a biometric prompt. When it won't —
+ * nothing enrolled, biometrics turned off in Settings, permission denied,
+ * or a lockout after too many failed scans — the OS's own error message is
+ * returned so the UI can show it verbatim instead of a generic one.
+ */
+export async function getBiometricAvailability(): Promise<BiometricAvailability> {
+  const fallback = 'Biometric authentication is not available on this device.';
+  try {
+    const { available, error } = await rnBiometrics.isSensorAvailable();
+    if (available) {
+      return { available: true };
+    }
+    return { available: false, osMessage: error || fallback };
+  } catch (e) {
+    const err = e as { message?: string } | undefined;
+    return { available: false, osMessage: err?.message || fallback };
+  }
+}
+
 /**
  * Which biometry the device supports, e.g. 'FaceID', 'TouchID', 'Fingerprint',
  * or null if none is enrolled/available.

@@ -55,7 +55,12 @@ export default function LoginScreen({ navigation }: Props) {
         getSupportedBiometry(),
         getRememberedEmail(),
       ]);
-      setBioAvailable(enrolled && !!supported);
+      // Show the button whenever biometric sign-in was enabled in the app,
+      // even if the OS currently reports biometry as unavailable (disabled in
+      // Settings, nothing enrolled, lockout) — tapping it then surfaces the
+      // OS's own error message via signInWithBiometrics instead of the
+      // feature silently vanishing.
+      setBioAvailable(enrolled);
       setBioName(biometryLabel(supported));
       if (rememberedEmail) {
         setEmail(rememberedEmail);

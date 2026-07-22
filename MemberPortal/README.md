@@ -11,7 +11,7 @@ directly to Descope's hosted service using your Project ID.
 | **Welcome screen** with *Sign In* / *Create Account* buttons | `src/screens/WelcomeScreen.tsx` |
 | **Login** — email + password, show/hide password, "Remember username", "Forgot password?" | `descope.password.signIn` / `descope.password.sendReset` (`src/screens/LoginScreen.tsx`) |
 | **Register** — 5-step wizard (personal info → verify email → review → set password → success) | `descope.otp.signUp.email` → `otp.verify.email` → `password.update` (`src/screens/register/`) |
-| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Explicit OS biometric prompt (`react-native-biometrics`) gating a Keychain-stored refresh token (`react-native-keychain`), then `descope.refresh` + `descope.me`. The app **asks** before enabling it (never silently) after any successful sign-in. Shown as its own button on the Login screen once enabled. |
+| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Explicit OS biometric prompt (`react-native-biometrics`) gating a Keychain-stored refresh token (`react-native-keychain`), then `descope.refresh` + `descope.me`. The app **asks** before enabling it (never silently) after any successful sign-in. Shown as its own button on the Login screen once enabled. If the OS reports biometrics as disabled/unavailable, the OS's own error message is shown; after 5 failed biometric attempts the button hides for that visit and the user is asked to sign in with their password. |
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, sign out |
 
 Session state is gated in `src/navigation/RootNavigator.tsx`: while a session

@@ -33,6 +33,14 @@ import type { AuthStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
+/**
+ * After this many failed biometric attempts the Login screen falls back to
+ * password sign-in: the biometric button hides for the rest of the visit and
+ * the user is told to use their password. The stored token is left intact,
+ * so biometrics is offered again the next time the screen mounts.
+ */
+const MAX_BIOMETRIC_ATTEMPTS = 5;
+
 export default function LoginScreen({ navigation }: Props) {
   const { signInWithEmail, signInWithBiometrics, requestPasswordReset } = useAuth();
   const { Logo } = useBranding();
@@ -47,6 +55,7 @@ export default function LoginScreen({ navigation }: Props) {
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
   const [bioBusy, setBioBusy] = useState(false);
+  const [bioFailures, setBioFailures] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -115,10 +124,21 @@ export default function LoginScreen({ navigation }: Props) {
     const res = await signInWithBiometrics();
     setBioBusy(false);
     if (!res.ok) {
-      setError(res.error);
+      const failures = bioFailures + 1;
+      setBioFailures(failures);
+      if (failures >= MAX_BIOMETRIC_ATTEMPTS) {
+        setError(
+          `${bioName} didn't work after ${MAX_BIOMETRIC_ATTEMPTS} attempts. ` +
+            'Please sign in with your password instead.',
+        );
+      } else {
+        setError(res.error);
+      }
       setBioAvailable(await hasBiometricLogin());
     }
   };
+
+  const showBioButton = bioAvailable && bioFailures < MAX_BIOMETRIC_ATTEMPTS;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -182,10 +202,10 @@ export default function LoginScreen({ navigation }: Props) {
               label="Sign In"
               onPress={onSubmit}
               loading={busy}
-              style={bioAvailable ? styles.actionSpacing : undefined}
+              style={showBioButton ? styles.actionSpacing : undefined}
             />
 
-            {bioAvailable && (
+            {showBioButton && (
               <AppButton
                 label={`Sign in with ${bioName}`}
                 variant="secondary"

@@ -29,6 +29,14 @@ import {
 export type AuthResult = ServiceResult;
 export type { VerifyResult, RegistrationDetails, PasswordPolicy };
 
+/**
+ * Biometric sign-in distinguishes OS-level unavailability (biometrics
+ * disabled in Settings, nothing enrolled, lockout) from an ordinary failed
+ * attempt, so the Login screen can show a native "enable it in Settings"
+ * alert for the former instead of the inline error banner.
+ */
+export type BiometricSignInResult = AuthResult & { osUnavailable?: boolean };
+
 export function useAuth() {
   const service = useDescopeService();
   const { manageSession, clearSession, session } = useSession();
@@ -103,7 +111,7 @@ export function useAuth() {
   );
 
   /** Sign in using the biometric-protected refresh token. */
-  const signInWithBiometrics = useCallback(async (): Promise<AuthResult> => {
+  const signInWithBiometrics = useCallback(async (): Promise<BiometricSignInResult> => {
     try {
       // If the OS won't allow a biometric prompt right now (disabled in
       // Settings, nothing enrolled, lockout), surface the OS's own message
@@ -111,7 +119,7 @@ export function useAuth() {
       // biometric sign-in works again once the user re-enables it.
       const availability = await getBiometricAvailability();
       if (!availability.available) {
-        return { ok: false, error: availability.osMessage };
+        return { ok: false, error: availability.osMessage, osUnavailable: true };
       }
       const refreshJwt = await getBiometricRefreshToken();
       if (!refreshJwt) {

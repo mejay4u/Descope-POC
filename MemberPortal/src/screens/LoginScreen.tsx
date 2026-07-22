@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   SafeAreaView,
@@ -124,6 +126,20 @@ export default function LoginScreen({ navigation }: Props) {
     const res = await signInWithBiometrics();
     setBioBusy(false);
     if (!res.ok) {
+      // Biometrics is disabled at the OS level — show a native alert (with a
+      // shortcut into Settings) rather than the inline error banner. No scan
+      // happened, so this doesn't count toward the 5-attempt password fallback.
+      if (res.osUnavailable) {
+        Alert.alert(
+          `Enable ${bioName}`,
+          `${res.error}\n\nMember Portal uses ${bioName} to verify that it is you when you sign in. You can turn it on in Settings.`,
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ],
+        );
+        return;
+      }
       const failures = bioFailures + 1;
       setBioFailures(failures);
       if (failures >= MAX_BIOMETRIC_ATTEMPTS) {

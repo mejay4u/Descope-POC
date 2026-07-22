@@ -83,6 +83,26 @@ export type BiometricAvailability =
   | { available: false; osMessage: string };
 
 /**
+ * On iOS, react-native-biometrics reports the whole NSError description —
+ * `Error Domain=com.apple.LocalAuthentication Code=-7 "..." UserInfo={...,
+ * NSLocalizedDescription=Biometry is not enrolled.}` — rather than just the
+ * user-facing text. Pull out the NSLocalizedDescription (or the quoted
+ * message) so the UI shows only the OS's human-readable sentence. Android's
+ * messages are already plain and pass through unchanged.
+ */
+function humanReadableOsMessage(raw: string): string {
+  const localized = raw.match(/NSLocalizedDescription=([^,}]+)/);
+  if (localized) {
+    return localized[1].trim();
+  }
+  const quoted = raw.match(/"([^"]+)"/);
+  if (quoted) {
+    return quoted[1];
+  }
+  return raw;
+}
+
+/**
  * Whether the OS will currently allow a biometric prompt. When it won't —
  * nothing enrolled, biometrics turned off in Settings, permission denied,
  * or a lockout after too many failed scans — the OS's own error message is
@@ -95,10 +115,16 @@ export async function getBiometricAvailability(): Promise<BiometricAvailability>
     if (available) {
       return { available: true };
     }
-    return { available: false, osMessage: error || fallback };
+    return {
+      available: false,
+      osMessage: error ? humanReadableOsMessage(error) : fallback,
+    };
   } catch (e) {
     const err = e as { message?: string } | undefined;
-    return { available: false, osMessage: err?.message || fallback };
+    return {
+      available: false,
+      osMessage: err?.message ? humanReadableOsMessage(err.message) : fallback,
+    };
   }
 }
 

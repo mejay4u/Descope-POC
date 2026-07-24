@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSession } from '@descope/react-native-sdk';
 import AppButton from '../components/AppButton';
+import KeyIcon from '../components/icons/KeyIcon';
 import { useAuth } from '../auth/useAuth';
 import {
   biometryLabel,
@@ -14,10 +17,13 @@ import {
   showBiometricUnavailableAlert,
 } from '../auth/biometricStore';
 import { colors, radius, spacing, typography } from '../theme';
+import type { AppStackParamList } from '../navigation/types';
 
 export default function PortalScreen() {
   const { session } = useSession();
   const { signOut } = useAuth();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const [bioEnabled, setBioEnabled] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
   const [bioOsDisabled, setBioOsDisabled] = useState(false);
@@ -125,6 +131,21 @@ export default function PortalScreen() {
         </View>
 
         <View style={styles.card}>
+          <Text style={styles.cardTitle}>Passkey</Text>
+          <Text style={styles.cardSub}>
+            Add a passkey to sign in with Face ID, Touch ID, a fingerprint, or a
+            security key — no password needed.
+          </Text>
+          <AppButton
+            label="Add a passkey"
+            variant="secondary"
+            icon={<KeyIcon size={18} color={colors.brand} />}
+            onPress={() => navigation.navigate('Passkey', { mode: 'signup' })}
+            style={styles.passkeyButton}
+          />
+        </View>
+
+        <View style={styles.card}>
           <Text style={styles.cardTitle}>Quick actions</Text>
           <Text style={styles.cardSub}>
             This is a demo portal. Wire these to your own screens as needed.
@@ -213,6 +234,7 @@ const styles = StyleSheet.create({
   rowValue: { color: colors.text, fontSize: 14, fontWeight: '600' },
   switchRow: { flexDirection: 'row', alignItems: 'center' },
   switchText: { flex: 1, marginRight: spacing.md },
+  passkeyButton: { marginTop: spacing.md },
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

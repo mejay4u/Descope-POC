@@ -3,6 +3,7 @@ import { Animated, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import AppButton from '../components/AppButton';
+import KeyIcon from '../components/icons/KeyIcon';
 import { useBranding } from '../branding/BrandingContext';
 import { colors, spacing, typography } from '../theme';
 import type { AuthStackParamList } from '../navigation/types';
@@ -70,6 +71,13 @@ export default function WelcomeScreen({ navigation }: Props) {
           label="Create Account"
           onPress={() => navigation.navigate('Register')}
           variant="secondary"
+          style={styles.actionSpacing}
+        />
+        <AppButton
+          label="Sign in with a passkey"
+          onPress={() => navigation.navigate('Passkey', { mode: 'signin' })}
+          variant="ghost"
+          icon={<KeyIcon size={18} color={colors.brand} />}
         />
       </Animated.View>
 

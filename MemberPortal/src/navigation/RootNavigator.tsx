@@ -49,6 +49,11 @@ function AppNavigator() {
         component={PortalScreen}
         options={{ title: 'Member Portal', headerShadowVisible: false }}
       />
+      <AppStack.Screen
+        name="Passkey"
+        component={PasskeyScreen}
+        options={{ title: 'Add a passkey', headerBackTitle: 'Back' }}
+      />
     </AppStack.Navigator>
   );
 }

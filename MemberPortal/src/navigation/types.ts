@@ -7,4 +7,5 @@ export type AuthStackParamList = {
 
 export type AppStackParamList = {
   Portal: undefined;
+  Passkey: { mode?: 'signin' | 'signup' } | undefined;
 };

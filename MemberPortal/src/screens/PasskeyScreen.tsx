@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { FlowView, useHostedFlowUrl, useSession } from '@descope/react-native-sdk';
 import Banner from '../components/Banner';
 import { promptEnableBiometricLogin } from '../auth/biometricStore';
@@ -11,9 +10,17 @@ import {
   isPasskeyConfigured,
 } from '../config';
 import { colors, radius, spacing, typography } from '../theme';
-import type { AuthStackParamList } from '../navigation/types';
 
-type Props = NativeStackScreenProps<AuthStackParamList, 'Passkey'>;
+/**
+ * Reachable from both the auth stack (unauthenticated sign-in) and the app
+ * stack (authenticated "add a passkey" from the Portal), so it's typed with a
+ * minimal structural shape rather than one navigator's param list — both only
+ * need `goBack` and `params.mode`.
+ */
+type Props = {
+  navigation: { goBack: () => void };
+  route: { params?: { mode?: 'signin' | 'signup' } };
+};
 
 /**
  * Passkeys (WebAuthn) run through a Descope Flow — see PASSKEY_FLOW_ID in
@@ -23,21 +30,27 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Passkey'>;
  * offer to remember it for quick biometric sign-in, exactly like the
  * password/OTP paths.
  *
+ * Two modes:
+ *   - 'signin'  (default, from Login/Welcome) — an unauthenticated sign-up-or-in
+ *     flow. manageSession makes a session exist and RootNavigator swaps to the
+ *     Portal automatically.
+ *   - 'signup'  (from the Portal) — the user is already signed in, so the flow
+ *     runs authenticated and adds a passkey to their account; we return to the
+ *     Portal manually since the session already exists.
+ *
  * Requires a Flow with passkeys enabled plus domain association (iOS
  * Associated Domains + apple-app-site-association, Android assetlinks.json).
  * See the README "Passkeys setup" section.
  */
 export default function PasskeyScreen({ navigation, route }: Props) {
+  const isAddMode = route.params?.mode === 'signup';
   const configured = isPasskeyConfigured();
   const flowUrl = useHostedFlowUrl(PASSKEY_FLOW_ID);
   const { manageSession } = useSession();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const title =
-    route.params?.mode === 'signup'
-      ? 'Register with a passkey'
-      : 'Sign in with a passkey';
+  const title = isAddMode ? 'Add a passkey' : 'Sign in with a passkey';
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
@@ -75,20 +88,32 @@ export default function PasskeyScreen({ navigation, route }: Props) {
               try {
                 await manageSession(jwtResponse);
                 await promptEnableBiometricLogin(jwtResponse.refreshJwt);
-                // Session listener in RootNavigator swaps to the Portal.
+                if (isAddMode) {
+                  // Already authenticated — RootNavigator won't switch stacks,
+                  // so return to the Portal ourselves.
+                  navigation.goBack();
+                }
+                // In sign-in mode RootNavigator swaps to the Portal on its own.
               } catch {
-                setError('Could not complete passkey sign-in.');
+                setError(
+                  isAddMode
+                    ? 'Could not add your passkey.'
+                    : 'Could not complete passkey sign-in.',
+                );
               }
             }}
             onError={e =>
-              setError(e.errorDescription || 'Passkey sign-in failed.')
+              setError(
+                e.errorDescription ||
+                  (isAddMode ? 'Could not add passkey.' : 'Passkey sign-in failed.'),
+              )
             }
           />
         </View>
       )}
 
       <Text style={styles.hint} onPress={() => navigation.goBack()}>
-        ← Back to other sign-in options
+        {isAddMode ? '← Back to the portal' : '← Back to other sign-in options'}
       </Text>
     </SafeAreaView>
   );

@@ -68,38 +68,64 @@ export default function PasskeyScreen({ navigation, route }: Props) {
   const runPasskeyFlow = async () => {
     setError(null);
     setBusy(true);
+    // Whether we're already logged in decides how we return afterwards — this
+    // is the reliable signal, not the screen's mode. If a session already
+    // exists the navigator won't swap stacks when the flow finishes, so we
+    // must pop back to the Portal ourselves.
+    const hadSession = !!session?.refreshJwt;
+    const priorUserId = session?.user?.userId ?? '';
     try {
-      // In add-mode the flow runs as the signed-in user (so it attaches a
-      // passkey to their account rather than creating a new login).
+      // When already signed in, run the flow authenticated so it attaches a
+      // passkey to the current account instead of starting a new login.
       const authentication =
-        isAddMode && session?.refreshJwt
+        hadSession && session?.refreshJwt
           ? { flowId, refreshJwt: session.refreshJwt }
           : undefined;
       // On iOS this resolves with the session when the browser flow finishes.
-      // The deep link (AUTH_REDIRECT_URL) is used to return the result on
-      // Android. See app.json / native URL scheme registration.
+      // The deep link (AUTH_REDIRECT_URL) returns the result on Android.
       const resp = await flow.start(
         flowUrl,
         AUTH_REDIRECT_URL,
         AUTH_REDIRECT_URL,
         authentication,
       );
-      if (!resp.ok || !resp.data) {
+      if (!resp.ok) {
         setError(
           resp.error?.errorDescription ||
             (isAddMode ? 'Could not add passkey.' : 'Passkey sign-in failed.'),
         );
         return;
       }
-      await manageSession(resp.data);
-      await promptEnableBiometricLogin(resp.data.refreshJwt);
+      // Apply the returned session if there is one. When already signed in the
+      // add-passkey flow may not return a full session, so a failure here is
+      // non-fatal (the existing session stays valid). A fresh sign-in, though,
+      // needs the session to succeed.
+      if (resp.data) {
+        try {
+          await manageSession(resp.data);
+          if (!hadSession) {
+            await promptEnableBiometricLogin(resp.data.refreshJwt);
+          }
+        } catch (e) {
+          if (!hadSession) {
+            throw e;
+          }
+        }
+      } else if (!hadSession) {
+        setError('Passkey sign-in failed.');
+        return;
+      }
+
       if (isAddMode) {
-        // Remember it locally so the Portal reflects the added passkey, then
-        // return there (RootNavigator won't switch stacks — already signed in).
-        await markPasskeyAdded(resp.data.user?.userId ?? '');
+        await markPasskeyAdded(priorUserId || resp.data?.user?.userId || '');
+      }
+
+      if (hadSession) {
+        // Already signed in — the navigator won't swap stacks, so return to
+        // the Portal ourselves.
         navigation.goBack();
       }
-      // In sign-in mode RootNavigator swaps to the Portal automatically.
+      // Fresh sign-in: RootNavigator swaps to the Portal on the session change.
     } catch (e) {
       const err = e as { message?: string } | undefined;
       setError(

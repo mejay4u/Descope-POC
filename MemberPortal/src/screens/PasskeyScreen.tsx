@@ -12,9 +12,11 @@ import AppButton from '../components/AppButton';
 import Banner from '../components/Banner';
 import KeyIcon from '../components/icons/KeyIcon';
 import { promptEnableBiometricLogin } from '../auth/biometricStore';
+import { markPasskeyAdded } from '../auth/passkeyStore';
 import {
   AUTH_REDIRECT_URL,
-  PASSKEY_FLOW_ID,
+  PASSKEY_ADD_FLOW_ID,
+  PASSKEY_SIGNIN_FLOW_ID,
   isPasskeyConfigured,
 } from '../config';
 import { colors, spacing, typography } from '../theme';
@@ -51,7 +53,10 @@ type Props = {
 export default function PasskeyScreen({ navigation, route }: Props) {
   const isAddMode = route.params?.mode === 'signup';
   const configured = isPasskeyConfigured();
-  const flowUrl = useHostedFlowUrl(PASSKEY_FLOW_ID);
+  // Sign-in and add-a-passkey are different Descope flows — using the add flow
+  // for sign-in renders a blank screen (it needs a logged-in user).
+  const flowId = isAddMode ? PASSKEY_ADD_FLOW_ID : PASSKEY_SIGNIN_FLOW_ID;
+  const flowUrl = useHostedFlowUrl(flowId);
   const flow = useFlow(); // deprecated but intentional — see file header note
   const { manageSession, session } = useSession();
   const [busy, setBusy] = useState(false);
@@ -68,7 +73,7 @@ export default function PasskeyScreen({ navigation, route }: Props) {
       // passkey to their account rather than creating a new login).
       const authentication =
         isAddMode && session?.refreshJwt
-          ? { flowId: PASSKEY_FLOW_ID, refreshJwt: session.refreshJwt }
+          ? { flowId, refreshJwt: session.refreshJwt }
           : undefined;
       // On iOS this resolves with the session when the browser flow finishes.
       // The deep link (AUTH_REDIRECT_URL) is used to return the result on
@@ -89,10 +94,12 @@ export default function PasskeyScreen({ navigation, route }: Props) {
       await manageSession(resp.data);
       await promptEnableBiometricLogin(resp.data.refreshJwt);
       if (isAddMode) {
-        // Already authenticated — RootNavigator won't switch stacks, so return
-        // to the Portal ourselves. In sign-in mode it swaps automatically.
+        // Remember it locally so the Portal reflects the added passkey, then
+        // return there (RootNavigator won't switch stacks — already signed in).
+        await markPasskeyAdded(resp.data.user?.userId ?? '');
         navigation.goBack();
       }
+      // In sign-in mode RootNavigator swaps to the Portal automatically.
     } catch (e) {
       const err = e as { message?: string } | undefined;
       setError(

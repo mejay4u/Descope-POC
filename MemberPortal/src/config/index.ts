@@ -23,23 +23,24 @@ export const AUTH_REDIRECT_SCHEME = 'memberportal';
 export const AUTH_REDIRECT_URL = `${AUTH_REDIRECT_SCHEME}://auth`;
 
 /**
- * Passkeys (WebAuthn) run through a Descope Flow rather than the direct SDK
- * calls the rest of the app uses: the native SDK performs the platform
- * passkey ceremony (Face ID / Touch ID / fingerprint / security key) *inside*
- * the flow, and there is no native passkey bridge to call directly.
+ * Passkeys (WebAuthn) run through Descope Flows opened in a browser (see
+ * src/screens/PasskeyScreen.tsx). Sign-in and adding a passkey are TWO
+ * different flows and must not be swapped:
  *
- * Set this to the ID of a Flow (in https://app.descope.com/flows) that has
- * passkeys enabled — a "sign up or in" flow is the usual choice so the same
- * button both registers a passkey and signs in with an existing one. Leaving
- * the placeholder simply hides the passkey button (see isPasskeyConfigured).
+ *   - PASSKEY_SIGNIN_FLOW_ID — an UNAUTHENTICATED flow used by the "Sign in
+ *     with a passkey" buttons (Welcome / Login). A "sign-in (passkeys or otp)"
+ *     flow works well: it signs in with an existing passkey. Pointing sign-in
+ *     at an add/authenticated flow renders a BLANK screen, because that flow
+ *     needs a logged-in user that doesn't exist yet.
  *
- * On-device passkeys additionally require domain association:
- *   - iOS:     the `webcredentials:` Associated Domains entitlement + a hosted
- *              apple-app-site-association file.
- *   - Android: a hosted assetlinks.json (Digital Asset Links).
- * See the README "Passkeys setup" section.
+ *   - PASSKEY_ADD_FLOW_ID — an AUTHENTICATED flow used by the Portal's "Add a
+ *     passkey" action. It attaches a passkey to the already-signed-in user.
+ *
+ * The defaults below match the flow IDs this POC's Descope project uses; change
+ * them to your own flow IDs (from https://app.descope.com/flows) if different.
  */
-export const PASSKEY_FLOW_ID: string = 'YOUR_PASSKEY_FLOW_ID';
+export const PASSKEY_SIGNIN_FLOW_ID: string = 'sign-in-passkeys-or-otp';
+export const PASSKEY_ADD_FLOW_ID: string = 'add-passkeys';
 
 /**
  * A value is still an unedited placeholder if it's empty or begins with the
@@ -52,9 +53,13 @@ function isPlaceholder(value: string): boolean {
   return value.length === 0 || value.startsWith('YOUR_');
 }
 
-/** Whether a usable passkey flow is configured (project ID + flow ID both set). */
+/** Whether usable passkey flows are configured (project ID + both flow IDs set). */
 export function isPasskeyConfigured(): boolean {
-  return !isPlaceholder(DESCOPE_PROJECT_ID) && !isPlaceholder(PASSKEY_FLOW_ID);
+  return (
+    !isPlaceholder(DESCOPE_PROJECT_ID) &&
+    !isPlaceholder(PASSKEY_SIGNIN_FLOW_ID) &&
+    !isPlaceholder(PASSKEY_ADD_FLOW_ID)
+  );
 }
 
 export function assertConfigured(): void {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSession } from '@descope/react-native-sdk';
 import AppButton from '../components/AppButton';
@@ -16,6 +16,7 @@ import {
   hasBiometricLogin,
   showBiometricUnavailableAlert,
 } from '../auth/biometricStore';
+import { hasAddedPasskey } from '../auth/passkeyStore';
 import { colors, radius, spacing, typography } from '../theme';
 import type { AppStackParamList } from '../navigation/types';
 
@@ -27,6 +28,7 @@ export default function PortalScreen() {
   const [bioEnabled, setBioEnabled] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
   const [bioOsDisabled, setBioOsDisabled] = useState(false);
+  const [passkeyAdded, setPasskeyAdded] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const user = session?.user;
@@ -50,6 +52,23 @@ export default function PortalScreen() {
       setBioEnabled(enabled);
     })();
   }, []);
+
+  // Re-check on focus so returning from a successful "Add a passkey" flow
+  // immediately reflects the added state.
+  useFocusEffect(
+    React.useCallback(() => {
+      let active = true;
+      (async () => {
+        const added = await hasAddedPasskey(user?.userId ?? '');
+        if (active) {
+          setPasskeyAdded(added);
+        }
+      })();
+      return () => {
+        active = false;
+      };
+    }, [user?.userId]),
+  );
 
   const toggleBiometric = async (value: boolean) => {
     if (value) {
@@ -131,13 +150,17 @@ export default function PortalScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Passkey</Text>
+          <View style={styles.passkeyTitleRow}>
+            <Text style={styles.cardTitle}>Passkey</Text>
+            {passkeyAdded && <Text style={styles.passkeyBadge}>Added ✓</Text>}
+          </View>
           <Text style={styles.cardSub}>
-            Add a passkey to sign in with Face ID, Touch ID, a fingerprint, or a
-            security key — no password needed.
+            {passkeyAdded
+              ? 'A passkey is set up on this device. You can add another for a different device or key.'
+              : 'Add a passkey to sign in with Face ID, Touch ID, a fingerprint, or a security key — no password needed.'}
           </Text>
           <AppButton
-            label="Add a passkey"
+            label={passkeyAdded ? 'Add another passkey' : 'Add a passkey'}
             variant="secondary"
             icon={<KeyIcon size={18} color={colors.brand} />}
             onPress={() => navigation.navigate('Passkey', { mode: 'signup' })}
@@ -235,6 +258,12 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: 'row', alignItems: 'center' },
   switchText: { flex: 1, marginRight: spacing.md },
   passkeyButton: { marginTop: spacing.md },
+  passkeyTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  passkeyBadge: { color: colors.success, fontSize: 13, fontWeight: '700' },
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

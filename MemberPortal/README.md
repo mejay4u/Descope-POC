@@ -109,11 +109,15 @@ To enable it:
 1. In the Console → **Flows**, create (or pick) a flow that has **passkeys**
    enabled — a *sign-up-or-in* flow is the usual choice so one button both
    registers a passkey and signs in with an existing one.
-2. Put its flow ID in [`src/config/index.ts`](src/config/index.ts):
+2. Put the flow IDs in [`src/config/index.ts`](src/config/index.ts). Sign-in
+   and add-a-passkey are **two different flows** — using the add flow for
+   sign-in renders a blank screen (it needs a logged-in user):
    ```ts
-   export const PASSKEY_FLOW_ID = 'my-passkey-flow';
+   export const PASSKEY_SIGNIN_FLOW_ID = 'sign-in-passkeys-or-otp'; // Welcome/Login
+   export const PASSKEY_ADD_FLOW_ID = 'add-passkeys';               // Portal "Add a passkey"
    ```
-   (`isPasskeyConfigured()` gates the buttons on this plus the Project ID.)
+   (`isPasskeyConfigured()` gates the buttons on both flow IDs plus the Project
+   ID.)
 3. In the Console, allowlist the app's redirect scheme (`memberportal://auth`,
    i.e. `AUTH_REDIRECT_URL`) so the hosted flow can return to the app.
 

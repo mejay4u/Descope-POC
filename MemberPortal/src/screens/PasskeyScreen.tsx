@@ -90,9 +90,13 @@ export default function PasskeyScreen({ navigation, route }: Props) {
         authentication,
       );
       if (!resp.ok) {
+        // Surface the raw code/description so we can tell a redirect problem
+        // (flow never returns) from a token problem (returns with an error).
+        const code = resp.error?.errorCode ? ` [${resp.error.errorCode}]` : '';
         setError(
-          resp.error?.errorDescription ||
-            (isAddMode ? 'Could not add passkey.' : 'Passkey sign-in failed.'),
+          (resp.error?.errorDescription ||
+            (isAddMode ? 'Could not add passkey.' : 'Passkey sign-in failed.')) +
+            code,
         );
         return;
       }
@@ -112,7 +116,13 @@ export default function PasskeyScreen({ navigation, route }: Props) {
           }
         }
       } else if (!hadSession) {
-        setError('Passkey sign-in failed.');
+        // Flow returned ok but with no session/tokens — usually the flow
+        // completed without redirecting a JWTResponse back to the app.
+        setError(
+          'Passkey sign-in returned no session. Check that memberportal://auth ' +
+            'is an approved redirect URL in Descope and the flow ends by ' +
+            'redirecting back to the app.',
+        );
         return;
       }
 

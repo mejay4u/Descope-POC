@@ -12,7 +12,7 @@ directly to Descope's hosted service using your Project ID.
 | **Login** — email + password, show/hide password, "Remember username", "Forgot password?" | `descope.password.signIn` / `descope.password.sendReset` (`src/screens/LoginScreen.tsx`) |
 | **Register** — 5-step wizard (personal info → verify email → review → set password → success) | `descope.otp.signUp.email` → `otp.verify.email` → `password.update` (`src/screens/register/`) |
 | **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Explicit OS biometric prompt (`react-native-biometrics`) gating a Keychain-stored refresh token (`react-native-keychain`), then `descope.refresh` + `descope.me`. The app **asks** before enabling it (never silently) after any successful sign-in. The Login screen always shows the biometric button so the feature is discoverable: if biometrics is disabled at the OS level a native alert shows the OS's own message (with an Open Settings shortcut); if it isn't set up in-app yet the user is pointed at password sign-in; after 5 failed scans the button hides for that visit and the user is asked to use their password. The Portal's enable/disable toggle is likewise always visible, disabled (with the OS message on tap) while OS-level biometrics is off. |
-| **Passkey sign-in** — WebAuthn (Face ID / Touch ID / fingerprint / security key) | Runs a Descope **Flow** via `FlowView` (`src/screens/PasskeyScreen.tsx`); the native SDK performs the passkey ceremony inside the flow. Entry points: a "Sign in with a passkey" button on both the Welcome and Login screens (`mode: 'signin'`, unauthenticated sign-up-or-in), and an "Add a passkey" action in the Portal (`mode: 'signup'`, authenticated — adds a passkey to the signed-in account). Gated on `PASSKEY_FLOW_ID` in `src/config` — see "Passkeys setup" below. |
+| **Passkey sign-in** — WebAuthn (Face ID / Touch ID / fingerprint / security key) | Runs a Descope **Flow** in a **browser** via `useFlow().start()` (`src/screens/PasskeyScreen.tsx`) — ASWebAuthenticationSession on iOS / Custom Tabs on Android. Because the flow runs on Descope's hosted domain, the passkey is a *web* passkey bound to that domain, so **no iOS Associated Domains entitlement / hosted AASA is required**. Entry points: a "Sign in with a passkey" button on both the Welcome and Login screens (`mode: 'signin'`, unauthenticated sign-up-or-in), and an "Add a passkey" action in the Portal (`mode: 'signup'`, authenticated — adds a passkey to the signed-in account). Gated on `PASSKEY_FLOW_ID` in `src/config` — see "Passkeys setup" below. |
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, add-a-passkey, sign out |
 
 Session state is gated in `src/navigation/RootNavigator.tsx`: while a session
@@ -94,12 +94,15 @@ App.tsx                    # wraps everything in Descope's <AuthProvider> + <Bra
 
 ### Passkeys setup (optional)
 
-The **"Sign in with a passkey"** button on the Login screen runs a Descope
-**Flow** (`src/screens/PasskeyScreen.tsx` via `FlowView`). This is separate
-from the direct-SDK approach the rest of the app uses, because the platform
-passkey ceremony is performed *inside* the flow by the native SDK — there is
-no direct passkey SDK call to make. Until it's configured, tapping the button
-shows a short "not set up" explanation instead of a flow.
+The passkey buttons (Welcome, Login, and the Portal's "Add a passkey") run a
+Descope **Flow** in a **browser** — `useFlow().start()` in
+`src/screens/PasskeyScreen.tsx`, which opens ASWebAuthenticationSession on iOS
+/ Custom Tabs on Android. Because the flow runs on Descope's hosted domain, the
+passkey is a **web passkey** bound to that domain, so the app needs **no iOS
+Associated Domains entitlement and no hosted apple-app-site-association / Android
+assetlinks.json** — none of the native domain-association setup that *native*
+passkeys (`FlowView`) would require. Until it's configured, tapping a passkey
+button shows a short "not set up" explanation.
 
 To enable it:
 
@@ -110,15 +113,20 @@ To enable it:
    ```ts
    export const PASSKEY_FLOW_ID = 'my-passkey-flow';
    ```
-   (`isPasskeyConfigured()` gates the button on this plus the Project ID.)
-3. Set up **domain association** so the OS trusts the app for WebAuthn:
-   - **iOS** — add the `webcredentials:<your-domain>` **Associated Domains**
-     entitlement and host an `apple-app-site-association` file on that domain.
-   - **Android** — host an `assetlinks.json` (Digital Asset Links) for your
-     app's package + signing certificate.
+   (`isPasskeyConfigured()` gates the buttons on this plus the Project ID.)
+3. In the Console, allowlist the app's redirect scheme (`memberportal://auth`,
+   i.e. `AUTH_REDIRECT_URL`) so the hosted flow can return to the app.
 
-   These files can't be hosted from this frontend-only POC, so on-device
-   passkeys require whatever domain you configure in Descope to serve them.
+**Testing note:** passkey creation is unreliable on the **iOS Simulator**
+(you'll see `ASAuthorizationController ... Code=1004` /
+`Could not register system wide server: -25204`) — test on a **physical
+device**, where the browser-based web-passkey flow works without any native
+entitlement setup.
+
+> Prefer *native* passkeys instead (own domain, `FlowView`)? That needs the iOS
+> `webcredentials:` Associated Domains entitlement + a hosted
+> apple-app-site-association, and an Android assetlinks.json. The browser flow
+> above avoids all of that, which is why this POC uses it.
 
 ## 3. Install & run
 

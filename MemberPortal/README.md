@@ -12,6 +12,7 @@ directly to Descope's hosted service using your Project ID.
 | **Login** — email + password, show/hide password, "Remember username", "Forgot password?" | `descope.password.signIn` / `descope.password.sendReset` (`src/screens/LoginScreen.tsx`) |
 | **Register** — 5-step wizard (personal info → verify email → review → set password → success) | `descope.otp.signUp.email` → `otp.verify.email` → `password.update` (`src/screens/register/`) |
 | **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Explicit OS biometric prompt (`react-native-biometrics`) gating a Keychain-stored refresh token (`react-native-keychain`), then `descope.refresh` + `descope.me`. The app **asks** before enabling it (never silently) after any successful sign-in. The Login screen always shows the biometric button so the feature is discoverable: if biometrics is disabled at the OS level a native alert shows the OS's own message (with an Open Settings shortcut); if it isn't set up in-app yet the user is pointed at password sign-in; after 5 failed scans the button hides for that visit and the user is asked to use their password. The Portal's enable/disable toggle is likewise always visible, disabled (with the OS message on tap) while OS-level biometrics is off. |
+| **Passkey sign-in** — WebAuthn (Face ID / Touch ID / fingerprint / security key) | Runs a Descope **Flow** via `FlowView` (`src/screens/PasskeyScreen.tsx`); the native SDK performs the passkey ceremony inside the flow. Gated on `PASSKEY_FLOW_ID` in `src/config` — see "Passkeys setup" below. |
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, sign out |
 
 Session state is gated in `src/navigation/RootNavigator.tsx`: while a session
@@ -19,9 +20,11 @@ exists the app shows the Portal, otherwise the Welcome/Login/Register flow.
 
 This app intentionally matches a specific design reference (Welcome + Sign In
 + multi-step Create Account) rather than offering every Descope-supported
-method — no social login, magic link, WhatsApp OTP, or passkeys. Those are
+method — no social login, magic link, or WhatsApp OTP. Those are
 straightforward to add back through the same `descopeService.ts` pattern if a
-future design calls for them.
+future design calls for them. Passkeys are the exception: they can't be driven
+by a direct SDK call from React Native, so they run through a Descope Flow
+(see "Passkeys setup").
 
 ## Project structure
 
@@ -88,6 +91,34 @@ App.tsx                    # wraps everything in Descope's <AuthProvider> + <Bra
 3. In the Descope Console → **Authentication Methods**, enable **Passwords**
    and **OTP** with the **Email** delivery method (used by the registration
    wizard).
+
+### Passkeys setup (optional)
+
+The **"Sign in with a passkey"** button on the Login screen runs a Descope
+**Flow** (`src/screens/PasskeyScreen.tsx` via `FlowView`). This is separate
+from the direct-SDK approach the rest of the app uses, because the platform
+passkey ceremony is performed *inside* the flow by the native SDK — there is
+no direct passkey SDK call to make. Until it's configured, tapping the button
+shows a short "not set up" explanation instead of a flow.
+
+To enable it:
+
+1. In the Console → **Flows**, create (or pick) a flow that has **passkeys**
+   enabled — a *sign-up-or-in* flow is the usual choice so one button both
+   registers a passkey and signs in with an existing one.
+2. Put its flow ID in [`src/config/index.ts`](src/config/index.ts):
+   ```ts
+   export const PASSKEY_FLOW_ID = 'my-passkey-flow';
+   ```
+   (`isPasskeyConfigured()` gates the button on this plus the Project ID.)
+3. Set up **domain association** so the OS trusts the app for WebAuthn:
+   - **iOS** — add the `webcredentials:<your-domain>` **Associated Domains**
+     entitlement and host an `apple-app-site-association` file on that domain.
+   - **Android** — host an `assetlinks.json` (Digital Asset Links) for your
+     app's package + signing certificate.
+
+   These files can't be hosted from this frontend-only POC, so on-device
+   passkeys require whatever domain you configure in Descope to serve them.
 
 ## 3. Install & run
 

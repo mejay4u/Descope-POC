@@ -29,6 +29,7 @@ import {
   getRememberedEmail,
   saveRememberedEmail,
 } from '../auth/rememberedEmail';
+import KeyIcon from '../components/icons/KeyIcon';
 import { colors, spacing, typography } from '../theme';
 import type { AuthStackParamList } from '../navigation/types';
 
@@ -223,8 +224,18 @@ export default function LoginScreen({ navigation }: Props) {
                 icon={<FingerprintIcon size={18} color={colors.brand} />}
                 onPress={onBiometric}
                 loading={bioBusy}
+                style={styles.actionSpacing}
               />
             )}
+
+            {/* Always offered so users discover passkey support; the Passkey
+                screen explains setup if no passkey flow is configured yet. */}
+            <AppButton
+              label="Sign in with a passkey"
+              variant="secondary"
+              icon={<KeyIcon size={18} color={colors.brand} />}
+              onPress={() => navigation.navigate('Passkey', { mode: 'signin' })}
+            />
           </View>
 
           <View style={styles.dividerRow}>

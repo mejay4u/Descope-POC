@@ -41,17 +41,24 @@ export const AUTH_REDIRECT_URL = `${AUTH_REDIRECT_SCHEME}://auth`;
  */
 export const PASSKEY_FLOW_ID: string = 'YOUR_PASSKEY_FLOW_ID';
 
+/**
+ * A value is still an unedited placeholder if it's empty or begins with the
+ * `YOUR_` prefix. Checking the prefix (rather than the whole placeholder
+ * string) is deliberate: setting a real value by find-and-replacing the
+ * placeholder token, e.g. `YOUR_PASSKEY_FLOW_ID` -> `add-passkeys`, must not
+ * accidentally rewrite these checks and invert them.
+ */
+function isPlaceholder(value: string): boolean {
+  return value.length === 0 || value.startsWith('YOUR_');
+}
+
 /** Whether a usable passkey flow is configured (project ID + flow ID both set). */
 export function isPasskeyConfigured(): boolean {
-  return (
-    DESCOPE_PROJECT_ID !== 'YOUR_DESCOPE_PROJECT_ID' &&
-    PASSKEY_FLOW_ID !== 'YOUR_PASSKEY_FLOW_ID' &&
-    PASSKEY_FLOW_ID.length > 0
-  );
+  return !isPlaceholder(DESCOPE_PROJECT_ID) && !isPlaceholder(PASSKEY_FLOW_ID);
 }
 
 export function assertConfigured(): void {
-  if (DESCOPE_PROJECT_ID === 'YOUR_DESCOPE_PROJECT_ID') {
+  if (isPlaceholder(DESCOPE_PROJECT_ID)) {
     console.warn(
       '[MemberPortal] DESCOPE_PROJECT_ID is not set. Edit src/config/index.ts.',
     );

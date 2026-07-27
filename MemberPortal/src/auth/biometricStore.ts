@@ -41,16 +41,29 @@ export async function enableBiometricLogin(refreshJwt: string): Promise<void> {
 }
 
 /**
- * Read the stored refresh JWT, gated behind an explicit OS biometric prompt
+ * Read the stored refresh JWT, gated behind an explicit OS auth prompt
  * (LocalAuthentication / BiometricPrompt — shown on real devices AND the
  * Simulator, unlike Keychain access control).
- * Returns null if the user cancels, the scan fails, or nothing is stored.
+ *
+ * `allowDeviceCredentials: true` lets the OS fall back to the device
+ * PIN / pattern / passcode when biometrics fails or is locked out, and —
+ * crucially — reports `success` once the user passes that fallback, so sign-in
+ * completes. Without it the prompt is biometric-only: on Android the PIN/
+ * pattern the OS offers on lockout is not an allowed authenticator, so
+ * `onAuthenticationSucceeded` never fires and sign-in stalls after the PIN.
+ * (The native module supports the flag on both platforms; it's just missing
+ * from the library's TypeScript types, hence the cast.)
+ *
+ * Returns null if the user cancels, the auth fails, or nothing is stored.
  */
 export async function getBiometricRefreshToken(): Promise<string | null> {
   try {
     const { success } = await rnBiometrics.simplePrompt({
       promptMessage: 'Sign in to Member Portal',
       cancelButtonText: 'Cancel',
+      allowDeviceCredentials: true,
+    } as Parameters<typeof rnBiometrics.simplePrompt>[0] & {
+      allowDeviceCredentials: boolean;
     });
     if (!success) {
       return null;
@@ -58,7 +71,7 @@ export async function getBiometricRefreshToken(): Promise<string | null> {
     const creds = await Keychain.getGenericPassword({ service: SERVICE });
     return creds ? creds.password : null;
   } catch {
-    // User cancelled or biometry failed.
+    // User cancelled or authentication failed.
     return null;
   }
 }

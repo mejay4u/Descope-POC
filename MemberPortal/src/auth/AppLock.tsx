@@ -14,12 +14,15 @@ import {
 import { colors, spacing, typography } from '../theme';
 
 /**
- * App-privacy lock. While the user is signed in, it:
- *   - covers the UI with an opaque overlay the moment the app goes inactive /
- *     background, so nothing sensitive shows in the app switcher snapshot, and
- *   - requires biometric (Face ID / Touch ID / fingerprint, with the usual
- *     PIN/passcode fallback) re-authentication when the app returns to the
- *     foreground before revealing the UI again.
+ * App-privacy lock. While the user is signed in, switching *away* to another
+ * app (a genuine background) arms the lock, and switching *back* to this app
+ * requires biometric (Face ID / Touch ID / fingerprint, with the usual PIN /
+ * passcode fallback) re-authentication before the UI is revealed again.
+ *
+ * It deliberately does NOT react to transient 'inactive' states — pulling down
+ * Control Center / the notification shade, an incoming call, or the biometric
+ * sheet itself — so the app never covers itself while in the foreground. Only a
+ * real app switch (background -> active) triggers the prompt.
  *
  * Only engaged when biometrics is available on the device — otherwise there's
  * nothing to re-authenticate with, so we don't lock the user out. A "Sign out"
@@ -31,12 +34,10 @@ export default function AppLock({ children }: { children: React.ReactNode }) {
   const { Logo } = useBranding();
   const isSignedIn = !!session?.refreshJwt;
 
-  const appState = useRef(AppState.currentState);
   const prompting = useRef(false);
   const [canLock, setCanLock] = useState(false);
   const [bioName, setBioName] = useState('Biometrics');
-  const [obscured, setObscured] = useState(false); // app switcher privacy cover
-  const [locked, setLocked] = useState(false); // needs re-auth to reveal
+  const [locked, setLocked] = useState(false); // armed on background; needs re-auth to reveal
   const [authFailed, setAuthFailed] = useState(false);
 
   // Whether locking is possible on this device (biometrics enrolled/available).
@@ -78,19 +79,19 @@ export default function AppLock({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', next => {
-      appState.current = next;
-      // The biometric sheet itself can flip AppState to inactive — ignore
-      // transitions while a prompt is up so it doesn't re-lock/re-trigger.
+      // Ignore transitions while a prompt is up — the biometric sheet itself
+      // flips AppState, and that must not re-arm or re-trigger the lock.
       if (prompting.current) {
         return;
       }
-      if (next === 'inactive' || next === 'background') {
-        setObscured(true);
+      if (next === 'background') {
+        // Switched away to another app / home — arm the lock. (Transient
+        // 'inactive' is intentionally ignored so we never cover the foreground.)
         if (isSignedIn && canLock) {
           setLocked(true);
         }
       } else if (next === 'active') {
-        setObscured(false);
+        // Switched back — if armed, require re-auth before revealing the UI.
         if (isSignedIn && canLock && locked) {
           attemptUnlock();
         }
@@ -101,13 +102,11 @@ export default function AppLock({ children }: { children: React.ReactNode }) {
 
   const onSignOut = async () => {
     setLocked(false);
-    setObscured(false);
     await signOut();
   };
 
-  // Only cover/lock while signed in. `obscured` hides the app-switcher
-  // snapshot; `locked` keeps it up until re-auth succeeds.
-  const showOverlay = isSignedIn && (obscured || locked);
+  // The overlay is up only after a real app switch, until re-auth succeeds.
+  const showOverlay = isSignedIn && locked;
 
   return (
     <View style={styles.root}>

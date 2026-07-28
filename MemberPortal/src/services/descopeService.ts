@@ -20,39 +20,6 @@ export type DescopeSdk = ReturnType<typeof useDescope>;
 export type ServiceResult = { ok: true } | { ok: false; error: string };
 export type VerifyResult = { ok: true; jwt: JWTResponse } | { ok: false; error: string };
 
-export type RegistrationDetails = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone?: string;
-};
-
-/**
- * The character-class requirements Descope enforces server-side. Mirrors the
- * Console's Authentication Methods → Passwords → Password Policy checkboxes.
- * Note: Descope's policy has no maximum length — that's a client-only cap.
- */
-export type PasswordPolicy = {
-  minLength: number;
-  lowercase: boolean;
-  uppercase: boolean;
-  number: boolean;
-  nonAlphanumeric: boolean;
-};
-
-/**
- * Fallback used if the live policy can't be fetched (offline, etc.). Kept in
- * sync with the current Descope Console configuration so the checklist stays
- * correct even without a network round-trip.
- */
-export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
-  minLength: 8,
-  lowercase: true,
-  uppercase: true,
-  number: true,
-  nonAlphanumeric: true,
-};
-
 function messageFor(e: unknown, fallback: string): string {
   const err = e as { errorDescription?: string; message?: string } | undefined;
   return err?.errorDescription || err?.message || fallback;
@@ -60,7 +27,13 @@ function messageFor(e: unknown, fallback: string): string {
 
 export function createDescopeService(sdk: DescopeSdk) {
   return {
-    // ---- Email + password ---------------------------------------------
+    // ---- Email + password (sign-in) -------------------------------------
+    //
+    // Sign-in and password reset still go through Descope. Registration no
+    // longer stores a password there (it goes to the MemberPortal database via
+    // memberApi.ts), so these succeed only for accounts whose password Descope
+    // still holds, or once the Descope login flow proxies validation to the
+    // MemberPortal API. Routing sign-in through that API is separate work.
 
     async signInWithPassword(email: string, password: string): Promise<VerifyResult> {
       try {
@@ -75,29 +48,6 @@ export function createDescopeService(sdk: DescopeSdk) {
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Invalid email or password.') };
       }
-    },
-
-    /**
-     * The live password policy configured in the Descope Console. Public
-     * endpoint (no auth needed). Falls back to DEFAULT_PASSWORD_POLICY so the
-     * caller always gets a usable policy to render a checklist from.
-     */
-    async getPasswordPolicy(): Promise<PasswordPolicy> {
-      try {
-        const resp = await sdk.password.policy();
-        if (resp.ok && resp.data) {
-          return {
-            minLength: resp.data.minLength,
-            lowercase: resp.data.lowercase,
-            uppercase: resp.data.uppercase,
-            number: resp.data.number,
-            nonAlphanumeric: resp.data.nonAlphanumeric,
-          };
-        }
-      } catch {
-        // fall through to the default policy below
-      }
-      return DEFAULT_PASSWORD_POLICY;
     },
 
     async requestPasswordReset(email: string): Promise<ServiceResult> {
@@ -115,34 +65,32 @@ export function createDescopeService(sdk: DescopeSdk) {
       }
     },
 
-    // ---- Registration wizard (email OTP -> password) ----------------------
+    // ---- Registration: email verification only ----------------------------
     //
-    // Splits what a single `password.signUp` call normally does into three
-    // steps so the UI can walk the user through them:
-    //   1. startRegistration      — creates the (unverified) user, emails an OTP.
+    // Descope's entire role in registration is proving the member owns the
+    // email address:
+    //   1. startRegistration      — creates a passwordless, email-only user
+    //                               record and emails an OTP.
     //   2. verifyRegistrationCode — exchanges the code for a session.
-    //   3. completeRegistration   — attaches a password using that session.
-    // See useAuth.ts / RegisterScreen for how the session is held between
-    // steps 2 and 3 without being applied early.
+    // Nothing else is sent here: the member's name, date of birth, zip, phone
+    // and password go to the MemberPortal .NET API instead (memberApi.ts), so
+    // Descope stores the email address and nothing more. The session from step
+    // 2 authenticates those API calls and is applied once the wizard finishes
+    // — see useAuth.ts / RegisterScreen.
 
-    async startRegistration(details: RegistrationDetails): Promise<ServiceResult> {
+    async startRegistration(email: string): Promise<ServiceResult> {
       try {
-        const resp = await sdk.otp.signUp.email(details.email, {
-          name: `${details.firstName} ${details.lastName}`.trim(),
-          givenName: details.firstName,
-          familyName: details.lastName,
-          email: details.email,
-          phone: details.phone || undefined,
-        });
+        // No user attributes: the skeleton record is the email address alone.
+        const resp = await sdk.otp.signUp.email(email);
         if (resp.ok) {
           return { ok: true };
         }
         // The email may already belong to an account from an earlier attempt
         // that never finished (or any existing account at all) — rather than
         // dead-ending the wizard with "User already exists", fall back to
-        // sending a normal sign-in code. The rest of the wizard (verify,
-        // then set/replace a password) works the same either way.
-        const retry = await sdk.otp.signIn.email(details.email);
+        // sending a normal sign-in code. The rest of the wizard works the same
+        // either way.
+        const retry = await sdk.otp.signIn.email(email);
         if (retry.ok) {
           return { ok: true };
         }
@@ -189,43 +137,6 @@ export function createDescopeService(sdk: DescopeSdk) {
         return { ok: true, jwt: resp.data };
       } catch (e) {
         return { ok: false, error: messageFor(e, 'Invalid code. Please try again.') };
-      }
-    },
-
-    async completeRegistration(
-      email: string,
-      password: string,
-      refreshJwt: string,
-    ): Promise<VerifyResult> {
-      try {
-        // `password.update` authenticates the account operation with the
-        // user's REFRESH token (same as me/logout/refresh) — NOT the session
-        // JWT. Passing the session token here fails with the generic
-        // "Password update failed".
-        const updateResp = await sdk.password.update(email, password, refreshJwt);
-        if (!updateResp.ok) {
-          return {
-            ok: false,
-            error: updateResp.error?.errorDescription ?? 'Could not set your password.',
-          };
-        }
-        // Setting the password invalidates the OTP-verify session tokens
-        // (a password change revokes existing sessions), so those tokens are
-        // now dead — reusing them for the Portal session or biometric
-        // enrollment would fail later. Sign in with the just-set password to
-        // get a fresh, guaranteed-valid session to return to the caller.
-        const signInResp = await sdk.password.signIn(email, password);
-        if (!signInResp.ok || !signInResp.data) {
-          return {
-            ok: false,
-            error:
-              signInResp.error?.errorDescription ??
-              'Your account was created — please sign in.',
-          };
-        }
-        return { ok: true, jwt: signInResp.data };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Could not set your password.') };
       }
     },
 

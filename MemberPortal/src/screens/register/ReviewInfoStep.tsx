@@ -8,10 +8,12 @@ import { colors, radius, spacing } from '../../theme';
 type Props = {
   form: FormState;
   onEdit: () => void;
+  /** Saves these details to the MemberPortal DB, then moves to the password step. */
   onConfirm: () => void;
+  busy: boolean;
 };
 
-export default function ReviewInfoStep({ form, onEdit, onConfirm }: Props) {
+export default function ReviewInfoStep({ form, onEdit, onConfirm, busy }: Props) {
   return (
     <View>
       <Text style={sharedStyles.title}>Review your information</Text>
@@ -37,7 +39,7 @@ export default function ReviewInfoStep({ form, onEdit, onConfirm }: Props) {
         {!!form.phone && <ReviewRow label="Contact number" value={form.phone} last />}
       </View>
 
-      <AppButton label="Confirm & Continue" onPress={onConfirm} />
+      <AppButton label="Confirm & Continue" onPress={onConfirm} loading={busy} />
     </View>
   );
 }

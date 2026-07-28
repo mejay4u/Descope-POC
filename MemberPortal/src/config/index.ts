@@ -1,16 +1,35 @@
 /**
  * App configuration.
  *
- * Descope is the identity provider (IdP) and the ONLY backend this app talks to.
- * There is no custom server — every auth call goes directly to Descope's hosted
- * service using the Project ID below.
+ * The app talks to two backends:
+ *   - **Descope** — the identity provider. During registration it only proves
+ *     the member owns their email address (sends and verifies the OTP) and
+ *     stores that email as the login ID. It never receives the password.
+ *   - **The MemberPortal .NET API** — owns the member record: the registration
+ *     details captured by the wizard and the password, both stored in the
+ *     MemberPortal database. See src/services/memberApi.ts.
  *
  * 1. Get your Project ID from https://app.descope.com/settings/project
  * 2. Paste it into DESCOPE_PROJECT_ID (or wire it up via react-native-config).
+ * 3. Point MEMBER_API_BASE_URL at your .NET API.
  */
 
 // Paste your Descope Project ID here (or wire up react-native-config / .env).
 export const DESCOPE_PROJECT_ID = 'YOUR_DESCOPE_PROJECT_ID';
+
+/**
+ * Base URL of the MemberPortal .NET API — scheme + host (+ port), no trailing
+ * path; the endpoint paths live in `src/services/memberApi.ts`.
+ *
+ *   export const MEMBER_API_BASE_URL = 'https://api.memberportal.example.com';
+ *
+ * Running against a local .NET dev server from a simulator/emulator:
+ *   - iOS Simulator:   'http://localhost:5000'
+ *   - Android emulator: 'http://10.0.2.2:5000'  (localhost is the emulator itself)
+ * Plain http also needs an ATS exception (iOS) / cleartext traffic enabled
+ * (Android) — use https where you can.
+ */
+export const MEMBER_API_BASE_URL = 'YOUR_MEMBER_API_BASE_URL';
 
 /**
  * Custom URL scheme used as the redirect target for the password-reset email,
@@ -51,6 +70,11 @@ export const PASSKEY_ADD_FLOW_ID: string = 'add-passkeys';
  */
 function isPlaceholder(value: string): boolean {
   return value.length === 0 || value.startsWith('YOUR_');
+}
+
+/** Whether the MemberPortal .NET API base URL has been filled in. */
+export function isMemberApiConfigured(): boolean {
+  return !isPlaceholder(MEMBER_API_BASE_URL);
 }
 
 /** Whether usable passkey flows are configured (project ID + both flow IDs set). */

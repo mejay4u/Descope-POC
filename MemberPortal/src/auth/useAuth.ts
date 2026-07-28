@@ -1,22 +1,26 @@
 /**
- * useAuth — a thin React binding over descopeService.
+ * useAuth — a thin React binding over descopeService and memberApi.
  *
- * The service does the actual Descope API calls and error-message mapping;
- * this hook adds the React-specific bits on top — applying the session
- * (`manageSession`) and offering biometric enrollment — so screens get a
- * simple `{ ok } | { ok: false, error }` result without touching Descope or
- * session state directly.
+ * The services do the actual API calls and error-message mapping; this hook
+ * adds the React-specific bits on top — applying the session (`manageSession`)
+ * and offering biometric enrollment — so screens get a simple
+ * `{ ok } | { ok: false, error }` result without touching Descope, the
+ * MemberPortal API, or session state directly.
  */
 import { useCallback } from 'react';
 import { useSession } from '@descope/react-native-sdk';
 import type { JWTResponse } from '@descope/core-js-sdk';
 import { useDescopeService } from '../services/useDescopeService';
-import type {
-  PasswordPolicy,
-  RegistrationDetails,
-  ServiceResult,
-  VerifyResult,
-} from '../services/descopeService';
+import type { ServiceResult, VerifyResult } from '../services/descopeService';
+import {
+  createRegistration,
+  fetchPasswordPolicy,
+  setRegistrationPassword,
+  type ApiResult,
+  type CreatedRegistration,
+  type MemberRegistration,
+  type PasswordPolicy,
+} from '../services/memberApi';
 import {
   disableBiometricLogin,
   enableBiometricLogin,
@@ -27,7 +31,7 @@ import {
 } from './biometricStore';
 
 export type AuthResult = ServiceResult;
-export type { VerifyResult, RegistrationDetails, PasswordPolicy };
+export type { VerifyResult, MemberRegistration, CreatedRegistration, PasswordPolicy };
 
 /**
  * Biometric sign-in distinguishes two special failures from an ordinary
@@ -72,17 +76,19 @@ export function useAuth() {
     [service],
   );
 
-  const getPasswordPolicy = useCallback(() => service.getPasswordPolicy(), [service]);
+  /** Password rules to show on the "Set a password" step — owned by our API. */
+  const getPasswordPolicy = useCallback(() => fetchPasswordPolicy(), []);
 
   /**
    * Multi-step registration wizard (Personal Info -> Verify Email -> Review
-   * -> Set Password). See descopeService.ts for what each step actually
-   * calls; the session returned by step 2 is intentionally NOT applied here
-   * — the caller (RegisterScreen) holds it until the wizard finishes, then
-   * applies it via `finishRegistration` below.
+   * -> Set Password). Descope handles the first two steps and nothing else;
+   * the reviewed details and the password are stored by the MemberPortal API.
+   * The session returned by the verify step is intentionally NOT applied here
+   * — the caller (RegisterScreen) holds it, uses it to authenticate the API
+   * calls, and applies it via `finishRegistration` once the wizard is done.
    */
   const startRegistration = useCallback(
-    (details: RegistrationDetails) => service.startRegistration(details),
+    (email: string) => service.startRegistration(email),
     [service],
   );
 
@@ -97,18 +103,27 @@ export function useAuth() {
   );
 
   /**
-   * Sets the account's password and returns a FRESH session (from a
-   * password sign-in) — the OTP-verify token passed in is only used to
-   * authorize the password update, and is invalidated by it. See
-   * descopeService.completeRegistration.
+   * Saves the reviewed registration details in the MemberPortal database and
+   * returns the new member record's ID. `sessionJwt` comes from the OTP-verify
+   * step and is what tells the API this email address was just verified.
    */
-  const completeRegistration = useCallback(
-    (email: string, password: string, refreshJwt: string) =>
-      service.completeRegistration(email, password, refreshJwt),
-    [service],
+  const createMemberRegistration = useCallback(
+    (details: MemberRegistration, sessionJwt: string): Promise<ApiResult<CreatedRegistration>> =>
+      createRegistration(details, sessionJwt),
+    [],
   );
 
-  /** Applies the fresh session from completeRegistration, once the wizard is done. */
+  /**
+   * Sets the member's password on that record. The password is stored by the
+   * MemberPortal API — it is never sent to Descope.
+   */
+  const setMemberPassword = useCallback(
+    (memberId: string, password: string, sessionJwt: string) =>
+      setRegistrationPassword(memberId, password, sessionJwt),
+    [],
+  );
+
+  /** Applies the held OTP-verify session, once the wizard is done. */
   const finishRegistration = useCallback(
     async (jwt: JWTResponse): Promise<void> => {
       await manageSession(jwt);
@@ -190,7 +205,8 @@ export function useAuth() {
     startRegistration,
     verifyRegistrationCode,
     resendRegistrationCode,
-    completeRegistration,
+    createMemberRegistration,
+    setMemberPassword,
     finishRegistration,
     requestPasswordReset,
     getPasswordPolicy,

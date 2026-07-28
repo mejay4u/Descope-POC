@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSession } from '@descope/react-native-sdk';
+import { isColdStartPending, markColdStartHandled } from '../auth/coldStart';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/register/RegisterScreen';
@@ -61,9 +62,25 @@ function AppNavigator() {
 export default function RootNavigator() {
   // The AuthProvider loads any persisted session on launch. While that happens
   // we show a splash spinner, then route to the portal or the auth flow.
-  const { session, isSessionLoading } = useSession();
+  const { session, isSessionLoading, clearSession } = useSession();
+  // On a cold start (app was killed and reopened) we don't silently restore the
+  // session into the Portal — clear it so the user signs in again. The biometric
+  // token lives in a separate Keychain entry, so Face ID sign-in still works.
+  const [handlingColdStart, setHandlingColdStart] = useState(isColdStartPending());
 
-  if (isSessionLoading) {
+  useEffect(() => {
+    if (isSessionLoading || !isColdStartPending()) {
+      return;
+    }
+    markColdStartHandled();
+    if (session) {
+      clearSession().finally(() => setHandlingColdStart(false));
+    } else {
+      setHandlingColdStart(false);
+    }
+  }, [isSessionLoading, session, clearSession]);
+
+  if (isSessionLoading || handlingColdStart) {
     return (
       <View style={styles.splash}>
         <ActivityIndicator size="large" color={colors.brand} />

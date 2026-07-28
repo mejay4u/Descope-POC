@@ -17,7 +17,11 @@ directly to Descope's hosted service using your Project ID.
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, add-a-passkey, sign out |
 
 Session state is gated in `src/navigation/RootNavigator.tsx`: while a session
-exists the app shows the Portal, otherwise the Welcome/Login/Register flow.
+exists the app shows the Portal, otherwise the Welcome/Login/Register flow. On a
+**cold start** (the app was killed and reopened — detected via `auth/coldStart.ts`)
+the persisted session is cleared before routing, so the app opens on the sign-in
+flow rather than silently restoring the Portal. The biometric token is kept, so
+Face ID / Touch ID sign-in still works from there.
 
 This app intentionally matches a specific design reference (Welcome + Sign In
 + multi-step Create Account) rather than offering every Descope-supported

@@ -60,6 +60,19 @@ async function runPrompt(allowDeviceCredentials: boolean): Promise<{ ok: boolean
   return { ok: success };
 }
 
+/** How many biometric tries Android gets before falling back to the PIN/pattern. */
+const ANDROID_MAX_BIOMETRIC_TRIES = 3;
+
+/** Whether a thrown biometric error is a lockout (retrying biometrics is then pointless). */
+function isLockout(e: unknown): boolean {
+  const msg = (e as { message?: string })?.message?.toLowerCase() ?? '';
+  return (
+    msg.includes('lockout') ||
+    msg.includes('too many') ||
+    msg.includes('disabled')
+  );
+}
+
 /**
  * Authenticate the user with the OS, returning true on success. The strategy
  * differs by platform because their fallback UX differs:
@@ -69,11 +82,12 @@ async function runPrompt(allowDeviceCredentials: boolean): Promise<{ ok: boolean
  *     sheet* — so one prompt already gives the retries-then-passcode flow.
  *     Doing a biometric-only prompt first would just show Face ID twice.
  *
- *   - Android: biometric-only first, so a wrong fingerprint doesn't jump
- *     straight to the PIN — the OS grants its full retry count (~5) and a bad
- *     scan just shows "Not recognized". Only after biometrics fails/locks out
- *     (a throw, not a user cancel) do we re-prompt allowing the device PIN /
- *     pattern, which reports success so sign-in still completes.
+ *   - Android: biometric-only, so a bad scan doesn't jump straight to the PIN.
+ *     On real hardware a wrong fingerprint just shows "Not recognized" and the
+ *     prompt stays open for retries; the emulator (and a locked-out sensor)
+ *     instead throws immediately, so we also retry the prompt at the app level
+ *     up to ANDROID_MAX_BIOMETRIC_TRIES. Only a genuine lockout, a user cancel,
+ *     or exhausting those tries falls back to the device PIN / pattern.
  */
 async function authenticate(): Promise<boolean> {
   if (Platform.OS === 'ios') {
@@ -84,17 +98,26 @@ async function authenticate(): Promise<boolean> {
       return false;
     }
   }
-  try {
-    const { ok } = await runPrompt(false);
-    return ok; // false = user cancelled biometrics; don't force the PIN on them
-  } catch {
-    // Biometrics failed or locked out — fall back to the device credential.
+
+  for (let attempt = 1; attempt <= ANDROID_MAX_BIOMETRIC_TRIES; attempt++) {
     try {
-      const { ok } = await runPrompt(true);
-      return ok;
-    } catch {
-      return false;
+      const { ok } = await runPrompt(false);
+      return ok; // success, or the user cancelled (false) — don't force the PIN
+    } catch (e) {
+      // A throw is a biometric error. A lockout won't clear by retrying, and
+      // once we've used our tries, hand off to the device credential.
+      if (isLockout(e) || attempt === ANDROID_MAX_BIOMETRIC_TRIES) {
+        break;
+      }
+      // Otherwise loop and let the user try their fingerprint again.
     }
+  }
+
+  try {
+    const { ok } = await runPrompt(true); // device PIN / pattern
+    return ok;
+  } catch {
+    return false;
   }
 }
 

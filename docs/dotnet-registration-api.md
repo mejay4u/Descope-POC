@@ -1,9 +1,9 @@
 # Build the MemberPortal registration API (.NET)
 
-> Handoff prompt for the agent building the .NET side. The mobile client is
-> already written and calling these endpoints — see
-> `MemberPortal/src/services/memberApi.ts` in this repo (branch
-> `claude/registration-memberportal-storage-9vlx1w`) for the exact client.
+> Standalone handoff brief. It is written for someone working in a **separate
+> .NET repository** with no access to the mobile app's source, so this document
+> is the contract: the endpoint shapes below are what the app already calls, and
+> changing them means changing the app.
 
 ## What we're building and why
 
@@ -11,7 +11,7 @@ A React Native member portal app uses **Descope** as its identity provider, but
 member data must **not** live in Descope. Descope's only job during
 registration is proving the member owns their email address — it sends and
 verifies an email OTP, and keeps the email as the login ID. The account it
-creates is a passwordless, email-only shadow record.
+creates there is a passwordless, email-only shadow record.
 
 Everything else — first name, last name, date of birth, zip code, phone, **and
 the password** — belongs in the MemberPortal database, behind the .NET API you
@@ -23,6 +23,8 @@ JWT validation on the two authenticated ones.
 ## What the mobile app already does
 
 The registration wizard has five steps. Steps 1–2 are Descope; steps 3–4 are you.
+The app is already written and calling your endpoints — you are filling in the
+server side of a client that exists.
 
 1. **Personal information** — the member fills in first name, last name, date of
    birth (MM/DD/YYYY), zip, email, optional phone. On Continue the app calls
@@ -48,6 +50,24 @@ The registration wizard has five steps. Steps 1–2 are Descope; steps 3–4 are
 Both writes send the Descope session JWT from step 2 as
 `Authorization: Bearer <sessionJwt>`. The app times out after 15 seconds. It is
 a mobile client, so no CORS is needed.
+
+## Project setup
+
+ASP.NET Core Web API on current LTS, EF Core with migrations, and whichever
+database the team already uses (SQL Server unless told otherwise). Serialize
+JSON as **camelCase** — the default. The app reads `memberId` exactly; a
+PascalCase serializer config will silently break it.
+
+Configuration the API needs (appsettings / user-secrets, never committed):
+
+- `Descope:ProjectId` — needed to validate the session JWTs.
+- `Descope:ManagementKey` — only if you resolve the member's email through the
+  Management SDK (see "Authenticating the writes").
+- The database connection string.
+
+Bind to a fixed local port during development and note it in your README: the
+mobile app reaches a local dev server at `http://localhost:<port>` from the iOS
+Simulator and `http://10.0.2.2:<port>` from the Android emulator.
 
 ## Endpoints to implement
 
@@ -135,8 +155,8 @@ only proof the app has that this email address was just verified.
   its session-validation helper.
 - The `sub` claim is the **Descope user ID**. Store it on the member record — it
   is the durable link between the Descope shadow record and your row, and it
-  costs nothing since it's already in the token. Today the only thing tying the
-  two together is the email string.
+  costs nothing since it's already in the token. Without it, the only thing
+  tying the two together is the email string.
 - **Do not trust the `email` in the request body.** Cross-check it against the
   authenticated user. Descope session JWTs don't necessarily carry the email as
   a claim by default; if it isn't there, either configure the project to include
@@ -164,6 +184,16 @@ back to the status code if none are present.
 
 So return something a member can act on ("That date of birth doesn't match our
 records"), never an internal exception or stack trace.
+
+## Deliverables
+
+- The three endpoints, the EF Core model, and a migration.
+- Tests covering: a fresh registration, the resume path (same email, still
+  pending), the already-active `409`, a rejected weak password, a request with
+  no/invalid bearer token, and a request whose `memberId` belongs to a different
+  user.
+- A README with how to run it locally, the config keys to set, and the local
+  URLs to give the mobile team.
 
 ## Out of scope for now — but design for it
 

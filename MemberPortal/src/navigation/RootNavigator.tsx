@@ -6,7 +6,7 @@ import { useSession } from '@descope/react-native-sdk';
 import { isColdStartPending, markColdStartHandled } from '../auth/coldStart';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
-import RegisterScreen from '../screens/RegisterScreen';
+import RegisterScreen from '../screens/register/RegisterScreen';
 import PasskeyScreen from '../screens/PasskeyScreen';
 import PortalScreen from '../screens/PortalScreen';
 import { colors } from '../theme';
@@ -28,12 +28,10 @@ function AuthNavigator() {
         component={LoginScreen}
         options={{ title: '', headerBackTitle: 'Back' }}
       />
-      {/* The flow renders its own screens inside the view, so the native
-          header is what lets the member back out of it. */}
       <AuthStack.Screen
         name="Register"
         component={RegisterScreen}
-        options={{ title: '', headerBackTitle: 'Back' }}
+        options={{ headerShown: false }}
       />
       <AuthStack.Screen
         name="Passkey"

@@ -3,9 +3,11 @@
 A React Native app (iOS + Android) that uses **Descope** as its identity
 provider, with member data kept in **ARTS DB** behind a .NET BFF.
 
-**Registration runs as a Descope Flow, not as app screens.** The app embeds the
-flow with `FlowView` and the Descope engine calls the BFF server-to-server at
-each phase — the "passthru" model. The app never calls the BFF itself; it hosts
+**Registration is driven by a Descope Flow but rendered with this app's own
+native screens.** The flow runs *headlessly*: Descope keeps the logic, the OTP
+delivery, and — the point of the passthru model — the HTTP connectors calling
+the BFF at each phase, while the app renders every screen itself. No webview,
+no Descope-styled UI. The app never calls the BFF directly; it feeds input into
 the flow and applies the enriched session JWT the flow finishes with.
 
 | | Descope | .NET BFF (+ ARTS DB / Facets) |
@@ -25,9 +27,9 @@ member record exists. The server-side contract is in
 | --- | --- |
 | **Welcome screen** with *Sign In* / *Create Account* buttons | `src/screens/WelcomeScreen.tsx` |
 | **Login** — email + password, show/hide password, "Remember username", "Forgot password?" | `descope.password.signIn` / `descope.password.sendReset` (`src/screens/LoginScreen.tsx`) |
-| **Register** — a Descope Flow embedded in the app | `FlowView` pointed at `REGISTER_FLOW_ID` (`src/screens/RegisterScreen.tsx`). The flow's four phases (details → OTP → password → SSN/eligibility) and the BFF calls behind them are configured in the Descope Console, not here — see "Registration flow setup" |
+| **Register** — a Descope Flow with native screens | `descope.flow.start`/`flow.next` in custom-screen mode (`src/services/flowRunner.ts`) driving one native step per flow screen (`src/screens/register/`). The flow's four phases (details → OTP → password → SSN/eligibility) and the BFF calls behind them are configured in the Descope Console — see "Registration flow setup" |
 | **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Explicit OS biometric prompt (`react-native-biometrics`) gating a Keychain-stored refresh token (`react-native-keychain`), then `descope.refresh` + `descope.me`. The app **asks** before enabling it (never silently) after any successful sign-in. The Login screen always shows the biometric button so the feature is discoverable: if biometrics is disabled at the OS level a native alert shows the OS's own message (with an Open Settings shortcut); if it isn't set up in-app yet the user is pointed at password sign-in; after 5 failed scans the button hides for that visit and the user is asked to use their password. The Portal's enable/disable toggle is likewise always visible, disabled (with the OS message on tap) while OS-level biometrics is off. |
-| **Passkey sign-in** — WebAuthn (Face ID / Touch ID / fingerprint / security key) | Embeds a Descope **Flow** with `FlowView` (`src/screens/PasskeyScreen.tsx`). FlowView does the passkey ceremony as a *web* passkey on Descope's domain and returns the session via its JS bridge, so **no iOS Associated Domains entitlement / hosted AASA and no redirect-URL config are required**. Entry points: a "Sign in with a passkey" button on both the Welcome and Login screens (`mode: 'signin'`), and an "Add a passkey" action in the Portal (`mode: 'signup'`, runs authenticated). Gated on the two `PASSKEY_*_FLOW_ID`s in `src/config` — see "Passkeys setup" below. |
+| **Passkey sign-in** — WebAuthn (Face ID / Touch ID / fingerprint / security key) | Runs a Descope **Flow** in a browser via `useFlow().start()` (`src/screens/PasskeyScreen.tsx`), making it a *web* passkey on Descope's domain, so **no iOS Associated Domains entitlement / hosted AASA is required**. Entry points: a "Sign in with a passkey" button on both the Welcome and Login screens (`mode: 'signin'`), and an "Add a passkey" action in the Portal (`mode: 'signup'`, runs authenticated). Gated on the two `PASSKEY_*_FLOW_ID`s in `src/config` — see "Passkeys setup" below. |
 | **Inactivity auto sign-out** | `src/auth/InactivityGate.tsx` — after a period with no interaction (default 5 min, incl. time backgrounded) the session is cleared. Because sign-out keeps the biometric-stored refresh token, the user returns to the Login screen and signs back in with Face ID / Touch ID / fingerprint. |
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, add-a-passkey, sign out |
 
@@ -56,15 +58,19 @@ src/
   services/
     descopeService.ts      # framework-agnostic wrapper — every raw `descope.*` call lives here
     useDescopeService.ts   # binds descopeService to the current useDescope() instance
+    flowRunner.ts          # drives a Descope flow headlessly (custom screens)
+    useFlowRunner.ts       # binds flowRunner to the current useDescope() instance
   components/              # AppButton (branding-injectable), DefaultAppButton, TextField,
-                            # Banner, icons/
+                            # StepProgress, Banner, icons/
   auth/
     useAuth.ts             # React binding over descopeService — session state + biometric prompts
     biometricStore.ts      # biometric-gated Keychain storage of the refresh token
     rememberedEmail.ts     # local (non-biometric) Keychain storage for "Remember username"
   navigation/              # RootNavigator + route types
-  screens/                 # WelcomeScreen, LoginScreen, RegisterScreen (FlowView),
-                            # PasskeyScreen, PortalScreen
+  screens/
+    register/              # RegisterScreen (drives the flow) + one component per
+                            # flow screen + flowScreens.ts (the ID mapping)
+    WelcomeScreen.tsx, LoginScreen.tsx, PasskeyScreen.tsx, PortalScreen.tsx
 App.tsx                    # wraps everything in Descope's <AuthProvider> + <BrandingProvider>
 ```
 
@@ -77,10 +83,12 @@ App.tsx                    # wraps everything in Descope's <AuthProvider> + <Bra
   `useAuth` is a thin React layer on top of it: it calls the service, then
   applies the resulting session (`manageSession`/biometric-enrollment
   prompt), which *is* inherently React-context-bound.
-  Registration is the exception to this layering: it's a Descope Flow, so it
-  makes no SDK calls at all — `RegisterScreen` renders a `FlowView` and the only
-  thing that comes back through `useAuth` is `finishRegistration`, which applies
-  the session the flow produced.
+- **`flowRunner.ts`** is the same pattern for flows: `createFlowRunner(sdk)`
+  wraps `flow.start` / `flow.next` in custom-screen mode and normalizes each
+  response into one of three things the UI cares about — *render this screen*,
+  *here's your session*, or *this failed*. `RegisterScreen` is then a small
+  state machine over that, and `useAuth` contributes only
+  `finishRegistration` to apply the resulting session.
 - **Branding is dependency-injected via `BrandingContext`.** `App.tsx` wraps
   the tree in `<BrandingProvider>`; screens read `appName` / `tagline` /
   `Logo` via `useBranding()` instead of hardcoding them (see
@@ -126,8 +134,26 @@ export const REGISTER_FLOW_ID = 'member-registration';
 ```
 
 `isRegistrationFlowConfigured()` gates the screen on that plus the Project ID;
-until both are set, the Register screen shows a "not set up yet" message instead
-of a blank webview.
+until both are set, the Register screen says so instead of failing silently.
+
+### Matching the flow's screens to the app's
+
+The flow runs with **custom screens**: it decides what to show and the app
+decides how to render it. Descope identifies each screen by an ID and each
+action on it by an interaction ID, both defined by the flow. The mapping lives
+in one file — [`src/screens/register/flowScreens.ts`](src/screens/register/flowScreens.ts) —
+and it's the only thing that needs changing when the flow changes:
+
+```ts
+{ screenId: 'verify-email', step: 'verify', submit: 'submit', secondary: 'resend' }
+```
+
+The IDs shipped there are placeholders. To find the real ones, run the flow
+once: any screen the app doesn't recognise is displayed by name ("The flow asked
+for *x*, which isn't in SCREEN_MAPPINGS") rather than rendering blank, so the
+flow tells you its own IDs as you step through it. `FLOW_FIELDS` in the same
+file maps our field names to the flow's input names — get these wrong and the
+connector posts nulls to the BFF.
 
 In the Console → **Flows**, the flow needs four phases and three HTTP connector
 calls to the BFF:
@@ -139,8 +165,10 @@ calls to the BFF:
 | 3. Password | password + confirmation | posts them to the BFF, which validates and stores the hash |
 | 4. Complete | SSN / member info | `POST /api/completeRegistration` → eligibility checked against Facets; `subscriberId` and `planId` come back and are mapped into custom JWT claims |
 
-The flow ends by issuing the enriched session JWT, which arrives in the app
-through `FlowView`'s `onSuccess` and is applied by `finishRegistration`.
+Each of those screens is rendered natively by the matching component in
+`src/screens/register/` — the flow supplies the steps and the logic, not the
+look. It ends by issuing the enriched session JWT, which arrives as a
+`completed` status and is applied by `finishRegistration`.
 
 The BFF side of this — endpoint shapes, how Descope authenticates to it, the
 data model, and the open questions still to settle — is documented in
@@ -148,19 +176,18 @@ data model, and the open questions still to settle — is documented in
 
 ### Passkeys setup (optional)
 
-The passkey buttons (Welcome, Login, and the Portal's "Add a passkey") embed a
-Descope **Flow** with **`FlowView`** (`src/screens/PasskeyScreen.tsx`). FlowView
-runs the flow in an in-app web view and:
+The passkey buttons (Welcome, Login, and the Portal's "Add a passkey") run a
+Descope **Flow** in a **browser** — `useFlow().start()` with
+ASWebAuthenticationSession on iOS / Custom Tabs on Android
+(`src/screens/PasskeyScreen.tsx`). Because the flow runs on Descope's own hosted
+domain, the passkey is a **web passkey** tied to that domain, so there's **no
+iOS Associated Domains entitlement / apple-app-site-association and no Android
+assetlinks.json** to set up.
 
-- performs the passkey ceremony via an internal web-auth session on Descope's
-  own domain, so it's a **web passkey** — **no iOS Associated Domains
-  entitlement / apple-app-site-association and no Android assetlinks.json**, and
-- returns the finished session straight through its JS bridge (`onSuccess`), so
-  there's **no custom-scheme redirect URL to configure**.
-
-(The SDK also offers a browser-based `useFlow().start()`, but that one needs the
-flow to redirect back to a registered app scheme — easy to misconfigure and the
-reason sign-in didn't return. FlowView avoids all of it.)
+(`FlowView` would keep it in-app, but it bridges to *native* passkeys, which do
+need the Associated Domains entitlement — and its ceremony misbehaves on the iOS
+Simulator. Registration uses a different mechanism again: a headless flow with
+native screens, which involves no passkey ceremony at all.)
 
 To enable it:
 
@@ -223,19 +250,22 @@ case a future feature needs it again:
   via `rememberedEmail.ts` and pre-fills it on the next launch.
 - **Forgot password** → `requestPasswordReset` calls `descope.password.sendReset`,
   inline on the Login screen.
-- **Register** → `screens/RegisterScreen.tsx` embeds the Descope registration
-  flow with `FlowView` and does nothing else. The four phases, the screens in
-  each, and the BFF calls between them all live in the flow (see "Registration
-  flow setup" above) — the app collects no input and makes no API calls. When
-  the flow completes, `onSuccess` hands back the enriched session JWT and
-  `finishRegistration` applies it (`manageSession` + the biometric-enrollment
-  prompt), which is what swaps the navigator to the Portal.
+- **Register** → `screens/register/RegisterScreen.tsx` starts the flow, then
+  loops: read the screen the flow asked for, render the matching native step,
+  send the member's input back with that screen's interaction ID. The four
+  phases, their order, and the BFF calls between them live in the flow (see
+  "Registration flow setup" above) — the app supplies the UI and nothing else,
+  and never calls the BFF itself. When the flow reports `completed` it returns
+  the enriched session JWT; `finishRegistration` applies it (`manageSession` +
+  the biometric-enrollment prompt), which swaps the navigator to the Portal.
 
-  `FlowView` here, rather than the browser-based `useFlow` the passkey screen
-  uses, so the member stays inside the app and the session returns over the JS
-  bridge with no redirect URL to register. The passkey screen needs a browser
-  for an unrelated reason — native passkeys would require an Associated Domains
-  entitlement.
+  Errors come back two ways and are handled differently: a `failed` status ends
+  the flow, while a wrong OTP arrives as an error *attached to the same screen*,
+  so the step re-renders with the message rather than dropping the member out.
+
+  There's no going back a step — the flow holds its state server-side, so the
+  wizard header's back button leaves registration rather than returning to the
+  previous screen.
 - **Biometric** → after any successful sign-in the app *asks* (native confirm
   dialog, never silent) whether to save the refresh token for biometric
   sign-in. The Login screen then shows a "Sign in with Face ID/Fingerprint"

@@ -11,7 +11,7 @@
  *
  * The refresh token never leaves the secure enclave-backed storage unprotected.
  */
-import { Alert, Linking, Platform } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 import ReactNativeBiometrics from 'react-native-biometrics';
 
@@ -60,61 +60,26 @@ async function runPrompt(allowDeviceCredentials: boolean): Promise<{ ok: boolean
   return { ok: success };
 }
 
-/** How many biometric tries Android gets before falling back to the PIN/pattern. */
-const ANDROID_MAX_BIOMETRIC_TRIES = 3;
-
-/** Whether a thrown biometric error is a lockout (retrying biometrics is then pointless). */
-function isLockout(e: unknown): boolean {
-  const msg = (e as { message?: string })?.message?.toLowerCase() ?? '';
-  return (
-    msg.includes('lockout') ||
-    msg.includes('too many') ||
-    msg.includes('disabled')
-  );
-}
-
 /**
- * Authenticate the user with the OS, returning true on success. The strategy
- * differs by platform because their fallback UX differs:
+ * Authenticate the user with the OS, returning true on success.
  *
- *   - iOS: a single prompt that allows the passcode. Face ID retries a couple
- *     of times on its own and then offers "Enter Passcode" *in the same
- *     sheet* — so one prompt already gives the retries-then-passcode flow.
- *     Doing a biometric-only prompt first would just show Face ID twice.
+ * A single combined prompt on both platforms — biometric AND the device
+ * credential (PIN / pattern / passcode) are accepted together:
+ *   - The biometric is primary; a wrong scan just shows "Not recognized" and
+ *     the prompt stays open to retry.
+ *   - A "Use PIN" / "Enter Passcode" option is available from the start, so the
+ *     user can fall back *without first failing into a lockout*, and entering
+ *     it signs them in directly.
  *
- *   - Android: biometric-only, so a bad scan doesn't jump straight to the PIN.
- *     On real hardware a wrong fingerprint just shows "Not recognized" and the
- *     prompt stays open for retries; the emulator (and a locked-out sensor)
- *     instead throws immediately, so we also retry the prompt at the app level
- *     up to ANDROID_MAX_BIOMETRIC_TRIES. Only a genuine lockout, a user cancel,
- *     or exhausting those tries falls back to the device PIN / pattern.
+ * This deliberately does NOT try biometric-only first: on Android that only
+ * surfaced the PIN after a lockout, and a post-lockout PIN is Android's
+ * "recover biometrics" flow — it unlocks the sensor and bounces back to the
+ * fingerprint instead of signing in. One combined prompt avoids that loop and
+ * matches iOS's native "Face ID or passcode" sheet.
  */
 async function authenticate(): Promise<boolean> {
-  if (Platform.OS === 'ios') {
-    try {
-      const { ok } = await runPrompt(true);
-      return ok;
-    } catch {
-      return false;
-    }
-  }
-
-  for (let attempt = 1; attempt <= ANDROID_MAX_BIOMETRIC_TRIES; attempt++) {
-    try {
-      const { ok } = await runPrompt(false);
-      return ok; // success, or the user cancelled (false) — don't force the PIN
-    } catch (e) {
-      // A throw is a biometric error. A lockout won't clear by retrying, and
-      // once we've used our tries, hand off to the device credential.
-      if (isLockout(e) || attempt === ANDROID_MAX_BIOMETRIC_TRIES) {
-        break;
-      }
-      // Otherwise loop and let the user try their fingerprint again.
-    }
-  }
-
   try {
-    const { ok } = await runPrompt(true); // device PIN / pattern
+    const { ok } = await runPrompt(true);
     return ok;
   } catch {
     return false;

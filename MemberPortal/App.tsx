@@ -10,7 +10,7 @@ import { StatusBar, useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@descope/react-native-sdk';
 import RootNavigator from './src/navigation/RootNavigator';
-import AppLock from './src/auth/AppLock';
+import InactivityGate from './src/auth/InactivityGate';
 import { DESCOPE_PROJECT_ID, assertConfigured } from './src/config';
 import { BrandingProvider } from './src/branding/BrandingContext';
 
@@ -26,11 +26,11 @@ function App(): React.JSX.Element {
             button component for a different deployment — see BrandingContext. */}
         <BrandingProvider>
           <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-          {/* Covers the UI in the app switcher and re-asks for biometrics on
-              return to the foreground while signed in. */}
-          <AppLock>
+          {/* Signs out after a period of inactivity while signed in; the user
+              re-authenticates with biometrics on the Login screen. */}
+          <InactivityGate>
             <RootNavigator />
-          </AppLock>
+          </InactivityGate>
         </BrandingProvider>
       </SafeAreaProvider>
     </AuthProvider>

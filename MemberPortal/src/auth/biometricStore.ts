@@ -99,16 +99,6 @@ async function authenticate(): Promise<boolean> {
 }
 
 /**
- * Prompt the OS to verify the user's identity (biometric, with the same
- * platform-specific PIN/passcode fallback as sign-in). Returns true on
- * success. Used by the app-privacy lock to re-authenticate on foreground —
- * it verifies identity only and doesn't touch the stored token.
- */
-export function verifyBiometricIdentity(): Promise<boolean> {
-  return authenticate();
-}
-
-/**
  * Read the stored refresh JWT, gated behind an explicit OS auth prompt
  * (LocalAuthentication / BiometricPrompt — shown on real devices AND the
  * Simulator, unlike Keychain access control). Returns null if authentication

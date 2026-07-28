@@ -13,15 +13,6 @@ import type { JWTResponse } from '@descope/core-js-sdk';
 import { useDescopeService } from '../services/useDescopeService';
 import type { ServiceResult, VerifyResult } from '../services/descopeService';
 import {
-  createRegistration,
-  fetchPasswordPolicy,
-  setRegistrationPassword,
-  type ApiResult,
-  type CreatedRegistration,
-  type MemberRegistration,
-  type PasswordPolicy,
-} from '../services/memberApi';
-import {
   disableBiometricLogin,
   enableBiometricLogin,
   getBiometricAvailability,
@@ -31,7 +22,7 @@ import {
 } from './biometricStore';
 
 export type AuthResult = ServiceResult;
-export type { VerifyResult, MemberRegistration, CreatedRegistration, PasswordPolicy };
+export type { VerifyResult };
 
 /**
  * Biometric sign-in distinguishes two special failures from an ordinary
@@ -76,54 +67,12 @@ export function useAuth() {
     [service],
   );
 
-  /** Password rules to show on the "Set a password" step — owned by our API. */
-  const getPasswordPolicy = useCallback(() => fetchPasswordPolicy(), []);
-
   /**
-   * Multi-step registration wizard (Personal Info -> Verify Email -> Review
-   * -> Set Password). Descope handles the first two steps and nothing else;
-   * the reviewed details and the password are stored by the MemberPortal API.
-   * The session returned by the verify step is intentionally NOT applied here
-   * — the caller (RegisterScreen) holds it, uses it to authenticate the API
-   * calls, and applies it via `finishRegistration` once the wizard is done.
+   * Applies the session a finished registration flow hands back. Registration
+   * itself is a Descope Flow (see RegisterScreen) — the app doesn't drive any
+   * of its steps, so this is all that's left of it here: activate the enriched
+   * session JWT and offer biometric enrollment, exactly as after a sign-in.
    */
-  const startRegistration = useCallback(
-    (email: string) => service.startRegistration(email),
-    [service],
-  );
-
-  const verifyRegistrationCode = useCallback(
-    (email: string, code: string) => service.verifyRegistrationCode(email, code),
-    [service],
-  );
-
-  const resendRegistrationCode = useCallback(
-    (email: string) => service.resendRegistrationCode(email),
-    [service],
-  );
-
-  /**
-   * Saves the reviewed registration details in the MemberPortal database and
-   * returns the new member record's ID. `sessionJwt` comes from the OTP-verify
-   * step and is what tells the API this email address was just verified.
-   */
-  const createMemberRegistration = useCallback(
-    (details: MemberRegistration, sessionJwt: string): Promise<ApiResult<CreatedRegistration>> =>
-      createRegistration(details, sessionJwt),
-    [],
-  );
-
-  /**
-   * Sets the member's password on that record. The password is stored by the
-   * MemberPortal API — it is never sent to Descope.
-   */
-  const setMemberPassword = useCallback(
-    (memberId: string, password: string, sessionJwt: string) =>
-      setRegistrationPassword(memberId, password, sessionJwt),
-    [],
-  );
-
-  /** Applies the held OTP-verify session, once the wizard is done. */
   const finishRegistration = useCallback(
     async (jwt: JWTResponse): Promise<void> => {
       await manageSession(jwt);
@@ -202,14 +151,8 @@ export function useAuth() {
 
   return {
     signInWithEmail,
-    startRegistration,
-    verifyRegistrationCode,
-    resendRegistrationCode,
-    createMemberRegistration,
-    setMemberPassword,
     finishRegistration,
     requestPasswordReset,
-    getPasswordPolicy,
     signInWithBiometrics,
     signOut,
   };

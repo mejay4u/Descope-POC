@@ -40,40 +40,69 @@ export async function enableBiometricLogin(refreshJwt: string): Promise<void> {
   });
 }
 
+/** simplePrompt options, extended with the (natively supported) device-credential flag the library's types omit. */
+type SimplePromptOptions = Parameters<typeof rnBiometrics.simplePrompt>[0] & {
+  allowDeviceCredentials?: boolean;
+};
+
+/**
+ * One OS auth prompt. `allowDeviceCredentials` decides whether the PIN /
+ * pattern / passcode is an accepted authenticator in *this* prompt.
+ * Resolves { cancelled } so callers can tell a deliberate cancel from a
+ * biometric failure/lockout (which throws).
+ */
+async function runPrompt(allowDeviceCredentials: boolean): Promise<{ ok: boolean }> {
+  const { success } = await rnBiometrics.simplePrompt({
+    promptMessage: 'Sign in to Member Portal',
+    cancelButtonText: 'Cancel',
+    allowDeviceCredentials,
+  } as SimplePromptOptions);
+  return { ok: success };
+}
+
 /**
  * Read the stored refresh JWT, gated behind an explicit OS auth prompt
  * (LocalAuthentication / BiometricPrompt — shown on real devices AND the
  * Simulator, unlike Keychain access control).
  *
- * `allowDeviceCredentials: true` lets the OS fall back to the device
- * PIN / pattern / passcode when biometrics fails or is locked out, and —
- * crucially — reports `success` once the user passes that fallback, so sign-in
- * completes. Without it the prompt is biometric-only: on Android the PIN/
- * pattern the OS offers on lockout is not an allowed authenticator, so
- * `onAuthenticationSucceeded` never fires and sign-in stalls after the PIN.
- * (The native module supports the flag on both platforms; it's just missing
- * from the library's TypeScript types, hence the cast.)
+ * Two stages, so the PIN/pattern doesn't appear on the first bad scan:
+ *   1. Biometric-only. The OS grants its natural retry allowance (~5
+ *      fingerprint tries on Android; Face ID/Touch ID retries on iOS) before
+ *      it reports a lockout — a wrong scan just shows "Not recognized" and
+ *      lets the user try again.
+ *   2. Only if biometrics fails/locks out (a throw, not a user cancel) do we
+ *      re-prompt allowing the device PIN / pattern / passcode. That fallback
+ *      reports success, so sign-in completes after it.
  *
- * Returns null if the user cancels, the auth fails, or nothing is stored.
+ * Returns null if the user cancels, auth fails at both stages, or nothing is
+ * stored.
  */
 export async function getBiometricRefreshToken(): Promise<string | null> {
+  let authed = false;
   try {
-    const { success } = await rnBiometrics.simplePrompt({
-      promptMessage: 'Sign in to Member Portal',
-      cancelButtonText: 'Cancel',
-      allowDeviceCredentials: true,
-    } as Parameters<typeof rnBiometrics.simplePrompt>[0] & {
-      allowDeviceCredentials: boolean;
-    });
-    if (!success) {
-      return null;
+    // Stage 1 — biometric only (no early PIN; full biometric retry count).
+    const { ok } = await runPrompt(false);
+    if (!ok) {
+      return null; // user cancelled
     }
-    const creds = await Keychain.getGenericPassword({ service: SERVICE });
-    return creds ? creds.password : null;
+    authed = true;
   } catch {
-    // User cancelled or authentication failed.
+    // Biometrics failed or locked out (not a cancel) — stage 2: device credential.
+    try {
+      const { ok } = await runPrompt(true);
+      if (!ok) {
+        return null; // user cancelled the PIN/passcode prompt
+      }
+      authed = true;
+    } catch {
+      return null; // credential auth failed too
+    }
+  }
+  if (!authed) {
     return null;
   }
+  const creds = await Keychain.getGenericPassword({ service: SERVICE });
+  return creds ? creds.password : null;
 }
 
 /** True if a biometric credential has been stored (does NOT prompt). */

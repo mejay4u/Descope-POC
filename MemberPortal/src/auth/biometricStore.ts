@@ -11,7 +11,7 @@
  *
  * The refresh token never leaves the secure enclave-backed storage unprotected.
  */
-import { Alert, Linking } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 import ReactNativeBiometrics from 'react-native-biometrics';
 
@@ -61,44 +61,51 @@ async function runPrompt(allowDeviceCredentials: boolean): Promise<{ ok: boolean
 }
 
 /**
- * Read the stored refresh JWT, gated behind an explicit OS auth prompt
- * (LocalAuthentication / BiometricPrompt — shown on real devices AND the
- * Simulator, unlike Keychain access control).
+ * Authenticate the user with the OS, returning true on success. The strategy
+ * differs by platform because their fallback UX differs:
  *
- * Two stages, so the PIN/pattern doesn't appear on the first bad scan:
- *   1. Biometric-only. The OS grants its natural retry allowance (~5
- *      fingerprint tries on Android; Face ID/Touch ID retries on iOS) before
- *      it reports a lockout — a wrong scan just shows "Not recognized" and
- *      lets the user try again.
- *   2. Only if biometrics fails/locks out (a throw, not a user cancel) do we
- *      re-prompt allowing the device PIN / pattern / passcode. That fallback
- *      reports success, so sign-in completes after it.
+ *   - iOS: a single prompt that allows the passcode. Face ID retries a couple
+ *     of times on its own and then offers "Enter Passcode" *in the same
+ *     sheet* — so one prompt already gives the retries-then-passcode flow.
+ *     Doing a biometric-only prompt first would just show Face ID twice.
  *
- * Returns null if the user cancels, auth fails at both stages, or nothing is
- * stored.
+ *   - Android: biometric-only first, so a wrong fingerprint doesn't jump
+ *     straight to the PIN — the OS grants its full retry count (~5) and a bad
+ *     scan just shows "Not recognized". Only after biometrics fails/locks out
+ *     (a throw, not a user cancel) do we re-prompt allowing the device PIN /
+ *     pattern, which reports success so sign-in still completes.
  */
-export async function getBiometricRefreshToken(): Promise<string | null> {
-  let authed = false;
-  try {
-    // Stage 1 — biometric only (no early PIN; full biometric retry count).
-    const { ok } = await runPrompt(false);
-    if (!ok) {
-      return null; // user cancelled
-    }
-    authed = true;
-  } catch {
-    // Biometrics failed or locked out (not a cancel) — stage 2: device credential.
+async function authenticate(): Promise<boolean> {
+  if (Platform.OS === 'ios') {
     try {
       const { ok } = await runPrompt(true);
-      if (!ok) {
-        return null; // user cancelled the PIN/passcode prompt
-      }
-      authed = true;
+      return ok;
     } catch {
-      return null; // credential auth failed too
+      return false;
     }
   }
-  if (!authed) {
+  try {
+    const { ok } = await runPrompt(false);
+    return ok; // false = user cancelled biometrics; don't force the PIN on them
+  } catch {
+    // Biometrics failed or locked out — fall back to the device credential.
+    try {
+      const { ok } = await runPrompt(true);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
+ * Read the stored refresh JWT, gated behind an explicit OS auth prompt
+ * (LocalAuthentication / BiometricPrompt — shown on real devices AND the
+ * Simulator, unlike Keychain access control). Returns null if authentication
+ * is cancelled/failed or nothing is stored.
+ */
+export async function getBiometricRefreshToken(): Promise<string | null> {
+  if (!(await authenticate())) {
     return null;
   }
   const creds = await Keychain.getGenericPassword({ service: SERVICE });

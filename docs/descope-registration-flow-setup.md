@@ -57,6 +57,30 @@ Two things worth getting right now rather than debugging later:
 
 **Flows → + Flow.** Give it an ID you'll recognise — `member-registration` is what the app's config
 example uses. It must be an **unauthenticated** flow: it runs for someone who has no account yet.
+Start from a **blank** flow rather than the [Flow Library](https://docs.descope.com/flows/intro-to-flows/flow-library):
+library flows arrive pre-wired for a conventional sign-up, and unpicking that takes longer than
+building these nine steps.
+
+### How the builder works
+
+The canvas opens with a start step. To add anything: **click the blue `+` at the top left**, pick a
+category, search for what you want, then **drag it onto the canvas**. The categories you'll use:
+
+| Category | For |
+| --- | --- |
+| **Screen** | anything the member sees — opens the widget-based Screen Builder |
+| **Action** | Send OTP, Verify OTP, Create User, Custom Claims |
+| **Connector** | the three BFF calls from step 1 |
+| **Condition** | branching on the eligibility result |
+
+Steps are wired by dragging from one step's output handle to the next step's input.
+
+### Why you still build screens with BYOS
+
+This trips people up: even though the app renders its own UI, **you still add Screen steps here**. The
+screen is what defines the *contract* — its input field names and its interaction IDs are exactly what
+the app maps in `flowScreens.ts`. What BYOS replaces is the visual design, not the structure. So the
+screens need the right **inputs and buttons**, but don't spend time styling them.
 
 Build the steps in this order.
 

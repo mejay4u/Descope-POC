@@ -133,7 +133,8 @@ Until this is set, the wizard's steps 1–2 (email + OTP) still work and steps 3
 Member Portal service is not configured."
 
 The two endpoints, their request/response shapes and how the API validates the Descope token are
-documented in [`docs/dotnet-registration-api.md`](../docs/dotnet-registration-api.md).
+documented in [`docs/dotnet-registration-api.md`](../docs/dotnet-registration-api.md), and the
+reasoning behind the split is in [`docs/architecture.md`](../docs/architecture.md).
 
 ### Passkeys setup (optional)
 

@@ -1,134 +1,97 @@
-# Build the registration BFF endpoints (.NET) — Descope passthru model
+# MemberPortal registration API — the contract the app depends on
 
-> Standalone handoff brief, written for the AUTH-API repo. Source of truth is
-> the sequence diagram *"AHC Descope - Login Flow - Registration - Descope -
-> Passthru"*; the step numbers below match its numbered arrows.
+The two endpoints the app calls after Descope has verified the member's email. Implemented in the
+**AUTH-API** repo under `registration/`; this document is the app's side of the agreement.
 
-## Architecture
+See [`architecture.md`](architecture.md) for why the split is drawn this way.
 
-Registration runs **inside a Descope Flow**. The member fills in the flow's
-screens, Descope holds the entered data in flow state, and **the Descope engine
-calls your BFF** over HTTP connectors at three points. Your BFF owns the member
-record in **ARTS DB** and the eligibility check against **Facets**.
+## Who calls, and with what
 
-Descope stores only a passwordless shadow record — the email address, nothing
-else — and at the end issues a session JWT enriched with custom claims built
-from data you return.
+The **mobile app** calls these directly — not Descope. Every call carries the Descope session JWT the
+app received from `otp.verify.email`:
 
-The single most important consequence: **these calls come from Descope's
-servers, not from the mobile app.** There is no member-held session JWT on
-them. Auth between Descope and the BFF is connector-level (see "Authenticating
-the calls" below).
+```
+Authorization: Bearer <descope session jwt>
+```
 
-## The flow, phase by phase
+That token is the only evidence these endpoints have that the email address was verified, so it must
+be validated, not merely decoded: signature against Descope's JWKS for the project
+(`https://api.descope.com/<projectId>/.well-known/jwks.json`), issuer equal to the project ID, and
+lifetime. The app times out after 15 seconds.
 
-**Phase 1 — Upfront data collection & OTP generation.** The member enters email,
-first name, last name, DOB and zip into the Descope flow (1). The flow holds the
-form in flow state (2) and emails an OTP (3). Your BFF is not called yet.
+## 1. `POST /api/initiateRegistration`
 
-**Phase 2 — OTP verification & backend sync.** The member enters the OTP (4) and
-Descope validates it (5). Only then does the flow call
-**`POST /api/initiateRegistration` with `{email, firstName, lastName, dob,
-zipCode}`** (6). You store the member record in ARTS DB (7) in **Pending**
-state (8) and return **`200` with `{emailID/userID}`** (9). Descope then creates
-its passwordless shadow record, email only (10).
+Stores the reviewed registration details and returns the pending record's id.
 
-Note the ordering: the ARTS DB record is created *before* the Descope user
-exists. If your call fails, no shadow record is created — the member record is
-the source of truth and Descope follows it.
+```jsonc
+// request
+{
+  "email": "jane@example.com",
+  "firstName": "Jane",
+  "lastName": "Member",
+  "dateOfBirth": "1985-04-23",   // ISO; the app's form collects MM/DD/YYYY and converts
+  "zipCode": "12345",
+  "contactNumber": "123-456-7890" // null when not provided
+}
 
-**Phase 3 — Update password.** The member enters password + confirm password
-(11, 12) and the flow posts **`{userID, password, confirmpassword}`** to the BFF
-(13). You validate the password against policy, update the record in ARTS DB
-(14) and return `200 OK` (15); the flow advances (16).
+// 200
+{ "userId": "8f3c…", "email": "jane@example.com", "status": "Pending" }
+```
 
-⚠️ The diagram shows this hitting `/api/initiateRegistration` again — the same
-path as step 6 with a completely different payload. Treat that as a diagram
-slip unless someone confirms otherwise: give it its own route (e.g.
-`POST /api/registration/password`). If it really must share the path, the
-handler has to branch on payload shape, which is worth avoiding.
+Required behavior:
 
-**Phase 4 — Complete registration.** The member enters SSN / member info (17,
-18) and the flow posts **`POST /api/completeRegistration` with `{email,
-SSN/MemberInfo}`** (19). You fetch MemberInfo from **Facets across all
-tenants** (20, 21), compare it against what the member submitted, and return
-**registration complete status `true` along with MemberInfo and PlanInfo** (22).
-Descope maps **`subscriberId` and `planId` into custom JWT claims** (23) and
-issues the enriched session JWT to the member (24).
+- **Cross-check the email** against the token's email claim; `403` on mismatch. A valid token for one
+  address must not be able to register another. (Descope projects vary on whether the session token
+  carries an email claim — if yours doesn't, add it as a custom claim or resolve it via the Management
+  SDK rather than skipping the check.)
+- **Record the token's `sub`** as `DescopeUserId` on the member. This is what lets the Auth API later
+  exchange a validated Descope token for its own enriched token without matching on email.
+- **Resume, don't duplicate.** A member who abandons the wizard and starts again must get the same
+  `userId` back rather than a duplicate-key error. An expired pending record is replaced.
+- **`409`** if the email already has a completed account.
 
-## Endpoints to implement
+## 2. `POST /api/registration/password`
 
-| # | Endpoint | Request | Response |
-| --- | --- | --- | --- |
-| 6 | `POST /api/initiateRegistration` | `{ email, firstName, lastName, dob, zipCode }` | `200` `{ userId, email }` — record created Pending |
-| 13 | `POST /api/registration/password` *(see slip above)* | `{ userId, password, confirmPassword }` | `200 OK` |
-| 19 | `POST /api/completeRegistration` | `{ email, ssn, memberInfo… }` | `200` `{ complete: true, memberInfo, planInfo }` incl. `subscriberId`, `planId` |
+The Create Account button. Sets the password and creates the account.
 
-Confirm the exact response field names with whoever configures the Descope
-connectors — the flow maps them into claims, so the names have to match on both
-sides. Same for `dob`'s format; agree on ISO `yyyy-MM-dd` unless the flow sends
-something else.
+```jsonc
+// request
+{ "userId": "8f3c…", "password": "…", "confirmPassword": "…" }
 
-## Authenticating the calls
+// 201
+{ "userId": "8f3c…", "email": "jane@example.com", "username": "jane@example.com" }
+```
 
-Not a member JWT — the caller is Descope, machine to machine:
+Required behavior:
 
-- Authenticate the connector: a bearer token or API key that Descope's connector
-  config sends and you verify, or mTLS if the team prefers. Keep the secret in
-  configuration/secret storage, never in source.
-- TLS is mandatory: phase 3 puts a plaintext password in the request body.
-- Consider an IP allow-list if Descope publishes egress ranges, as defense in
-  depth — not as the only control.
-- Reject anything unauthenticated. Because the flow only calls you *after* it has
-  validated the OTP, a properly authenticated call is your evidence the email was
-  verified — but that guarantee is only as strong as the connector credential, so
-  treat it accordingly.
+- Hash it (PBKDF2 / bcrypt / Argon2 — not a bare SHA) and promote the pending record to a real user
+  **under the same id**, so the identifier the app has held since call 1 stays valid.
+- Enforce the password policy server-side. The app's checklist mirrors it but is not validation.
+- Never log the password or let it reach request-logging middleware.
 
-## Data model (suggested)
+## Password policy
 
-`Member`: `UserId`, `Email` (unique), `FirstName`, `LastName`, `DateOfBirth`,
-`ZipCode`, `PasswordHash`, `Status` (`Pending` → `Active` → `Complete`),
-`SubscriberId`, `PlanId`, SSN, `CreatedAt`, `UpdatedAt`.
+The app's checklist (`PASSWORD_POLICY` in `src/screens/register/types.ts`) and the API's
+`PasswordPolicy` config must agree, or members are told one thing and refused for another. Current
+values, from the Create Account design:
 
-Hash the password with ASP.NET Core Identity's `PasswordHasher<T>`, bcrypt or
-Argon2 — never a bare SHA — and never log it or let it reach request-logging
-middleware.
-
-**SSN and member info are PHI/PII.** Encrypt at rest, keep them out of logs and
-error responses, mask anywhere they're echoed back, and check what your
-retention policy requires. This is a payer system; treat the whole record as
-regulated data.
-
-Make `initiateRegistration` idempotent on email: a member who abandons the flow
-and starts over must not hit a duplicate-key error — return the existing Pending
-record. Decide explicitly what happens when the email is already **Complete**
-(most likely: refuse, with a message the flow can show).
+| Rule | Value |
+| --- | --- |
+| Length | 14–56 characters |
+| Uppercase | required |
+| Lowercase | required |
+| Digit | required |
+| Special character | required |
 
 ## Errors
 
-Return ProblemDetails with a `detail` a member could act on. Whatever the flow
-is configured to display comes from your response body, so no stack traces, and
-nothing containing SSN or other PHI.
+The app shows your message to the member as-is. It reads, in order: ProblemDetails `detail`, the first
+entry of the validation `errors` dictionary, `title`, then a plain `{ "message": … }`, falling back to
+the status code. Return something a member can act on, never an internal exception.
 
-Failure cases worth designing now: Facets returns no match for the SSN/member
-info; Facets is unreachable; the submitted info contradicts Facets; the member
-is found but not eligible. Each needs a distinct, non-leaky response the flow
-can branch on.
+## Not in this contract
 
-## Open questions to settle before building
-
-1. Is the phase-3 call really on `/api/initiateRegistration`, or its own route?
-2. Exact response field names Descope maps to claims (`subscriberId`, `planId`).
-3. Is `email` or `userID` the key on `completeRegistration`? The diagram shows
-   `email` at step 19 but `userID` at step 13.
-4. What "compare MemberInfo against Facets data" must match on, and what a
-   mismatch does to the registration.
-5. Whether anything else belongs in the enriched JWT beyond subscriber and plan.
-
-## If work already exists on `Registration-Story`
-
-Check it against this model before extending it. Anything written on the
-assumption that the **mobile app** calls these endpoints with a member's Descope
-session JWT needs revisiting: in the passthru design the caller is Descope, the
-auth is a connector credential, and the endpoint names above are the ones the
-flow will use.
+- **Step 5 — membership/eligibility** (SSN, plan lookup, subscriber and plan IDs). Deferred.
+- **Sign-in.** The password lives in this database now, so sign-in has to be validated against it —
+  currently unresolved, and the next piece of work.
+- **The enriched token.** The Auth API mints it; it isn't part of the registration wizard.

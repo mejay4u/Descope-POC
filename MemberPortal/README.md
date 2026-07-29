@@ -1,24 +1,21 @@
 # Member Portal
 
 A React Native app (iOS + Android) that uses **Descope** as its identity
-provider, with member data kept in **ARTS DB** behind a .NET BFF.
+provider, with member data kept in its own database behind a .NET API.
 
-**Registration is driven by a Descope Flow but rendered with this app's own
-native screens.** The flow runs *headlessly*: Descope keeps the logic, the OTP
-delivery, and — the point of the passthru model — the HTTP connectors calling
-the BFF at each phase, while the app renders every screen itself. No webview,
-no Descope-styled UI. The app never calls the BFF directly; it feeds input into
-the flow and applies the enriched session JWT the flow finishes with.
+**Registration is a native wizard driven by the SDK.** The app runs the screens
+itself and calls `descope.otp.signUp/verify.email` to prove the member owns
+their email address, then calls the .NET API to store the member record and the
+password. No Descope-hosted UI, no flow to configure.
 
-| | Descope | .NET BFF (+ ARTS DB / Facets) |
+| | Descope | .NET Registration API |
 | --- | --- | --- |
-| **Owns** | the email address (login ID), the flow UI and state, sessions, biometrics, passkeys | the member record: name, DOB, zip, SSN/member info — **and the password** |
-| **During registration** | collects the input, verifies the OTP, calls the BFF, mints the enriched JWT | stores the record, validates and stores the password, checks eligibility against Facets |
+| **Owns** | the email address (login ID), sessions, biometrics, passkeys | the member record: name, DOB, zip, contact number — **and the password** |
+| **During registration** | sends and verifies the email OTP; issues the session | stores the record, then hashes and stores the password |
 | **Never sees** | the password, or any profile field | — |
 
 Registration information is **not** stored in Descope: its user record is a
-passwordless, email-only shadow record, created only after the BFF confirms the
-member record exists. The server-side contract is in
+passwordless, email-only record. The server-side contract is in
 [`docs/dotnet-registration-api.md`](../docs/dotnet-registration-api.md).
 
 ## Features
@@ -27,7 +24,7 @@ member record exists. The server-side contract is in
 | --- | --- |
 | **Welcome screen** with *Sign In* / *Create Account* buttons | `src/screens/WelcomeScreen.tsx` |
 | **Login** — email + password, show/hide password, "Remember username", "Forgot password?" | `descope.password.signIn` / `descope.password.sendReset` (`src/screens/LoginScreen.tsx`) |
-| **Register** — a Descope Flow with native screens | `descope.flow.start`/`flow.next` in custom-screen mode (`src/services/flowRunner.ts`) driving one native step per flow screen (`src/screens/register/`). The flow's four phases (details → OTP → password → SSN/eligibility) and the BFF calls behind them are configured in the Descope Console — see "Registration flow setup" |
+| **Register** — a 6-step native wizard | Personal Information → Verify Email → Review → Create Account → *(5: membership check, not built)* → All set (`src/screens/register/`). `descope.otp.signUp.email` → `otp.verify.email` for the email check, then `POST /api/initiateRegistration` and `POST /api/registration/password` on the .NET API (`src/services/memberApi.ts`) |
 | **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Explicit OS biometric prompt (`react-native-biometrics`) gating a Keychain-stored refresh token (`react-native-keychain`), then `descope.refresh` + `descope.me`. The app **asks** before enabling it (never silently) after any successful sign-in. The Login screen always shows the biometric button so the feature is discoverable: if biometrics is disabled at the OS level a native alert shows the OS's own message (with an Open Settings shortcut); if it isn't set up in-app yet the user is pointed at password sign-in; after 5 failed scans the button hides for that visit and the user is asked to use their password. The Portal's enable/disable toggle is likewise always visible, disabled (with the OS message on tap) while OS-level biometrics is off. |
 | **Passkey sign-in** — WebAuthn (Face ID / Touch ID / fingerprint / security key) | Runs a Descope **Flow** in a browser via `useFlow().start()` (`src/screens/PasskeyScreen.tsx`), making it a *web* passkey on Descope's domain, so **no iOS Associated Domains entitlement / hosted AASA is required**. Entry points: a "Sign in with a passkey" button on both the Welcome and Login screens (`mode: 'signin'`), and an "Add a passkey" action in the Portal (`mode: 'signup'`, runs authenticated). Gated on the two `PASSKEY_*_FLOW_ID`s in `src/config` — see "Passkeys setup" below. |
 | **Inactivity auto sign-out** | `src/auth/InactivityGate.tsx` — after a period with no interaction (default 5 min, incl. time backgrounded) the session is cleared. Because sign-out keeps the biometric-stored refresh token, the user returns to the Login screen and signs back in with Face ID / Touch ID / fingerprint. |
@@ -52,14 +49,13 @@ by a direct SDK call from React Native, so they run through a Descope Flow
 
 ```
 src/
-  config/index.ts          # Descope Project ID, flow IDs, auth redirect scheme
+  config/index.ts          # Descope Project ID, member API base URL, passkey flow IDs
   theme/                   # colors, spacing, typography
   branding/                # BrandingContext (injectable logo/app name/tagline/button), DefaultLogo
   services/
     descopeService.ts      # framework-agnostic wrapper — every raw `descope.*` call lives here
     useDescopeService.ts   # binds descopeService to the current useDescope() instance
-    flowRunner.ts          # drives a Descope flow headlessly (custom screens)
-    useFlowRunner.ts       # binds flowRunner to the current useDescope() instance
+    memberApi.ts           # client for the .NET API (member record + password)
   components/              # AppButton (branding-injectable), DefaultAppButton, TextField,
                             # StepProgress, Banner, icons/
   auth/
@@ -68,8 +64,7 @@ src/
     rememberedEmail.ts     # local (non-biometric) Keychain storage for "Remember username"
   navigation/              # RootNavigator + route types
   screens/
-    register/              # RegisterScreen (drives the flow) + one component per
-                            # flow screen + flowScreens.ts (the ID mapping)
+    register/              # RegisterScreen (wizard orchestrator) + one component per step
     WelcomeScreen.tsx, LoginScreen.tsx, PasskeyScreen.tsx, PortalScreen.tsx
 App.tsx                    # wraps everything in Descope's <AuthProvider> + <BrandingProvider>
 ```
@@ -83,12 +78,10 @@ App.tsx                    # wraps everything in Descope's <AuthProvider> + <Bra
   `useAuth` is a thin React layer on top of it: it calls the service, then
   applies the resulting session (`manageSession`/biometric-enrollment
   prompt), which *is* inherently React-context-bound.
-- **`flowRunner.ts`** is the same pattern for flows: `createFlowRunner(sdk)`
-  wraps `flow.start` / `flow.next` in custom-screen mode and normalizes each
-  response into one of three things the UI cares about — *render this screen*,
-  *here's your session*, or *this failed*. `RegisterScreen` is then a small
-  state machine over that, and `useAuth` contributes only
-  `finishRegistration` to apply the resulting session.
+- **`memberApi.ts`** is the same idea for the .NET API: plain async functions
+  (no SDK to inject, so no factory), returning the same
+  `{ ok: true, data } | { ok: false, error }` shape with an already-user-facing
+  error message. Screens reach both services through `useAuth`.
 - **Branding is dependency-injected via `BrandingContext`.** `App.tsx` wraps
   the tree in `<BrandingProvider>`; screens read `appName` / `tagline` /
   `Logo` via `useBranding()` instead of hardcoding them (see
@@ -124,55 +117,23 @@ App.tsx                    # wraps everything in Descope's <AuthProvider> + <Bra
    only needed for the existing Descope-backed sign-in — registration doesn't
    set a password there.
 
-## 2b. Registration flow setup (required for registration)
+## 2b. Configure the .NET API (required for registration)
 
-Registration is a Descope Flow, so most of it is built in the Console rather
-than in this repo. The app only needs the flow's ID:
-
-```ts
-export const REGISTER_FLOW_ID = 'member-registration';
-```
-
-`isRegistrationFlowConfigured()` gates the screen on that plus the Project ID;
-until both are set, the Register screen says so instead of failing silently.
-
-### Matching the flow's screens to the app's
-
-The flow runs with **custom screens**: it decides what to show and the app
-decides how to render it. Descope identifies each screen by an ID and each
-action on it by an interaction ID, both defined by the flow. The mapping lives
-in one file — [`src/screens/register/flowScreens.ts`](src/screens/register/flowScreens.ts) —
-and it's the only thing that needs changing when the flow changes:
+Point the app at your registration API in [`src/config/index.ts`](src/config/index.ts):
 
 ```ts
-{ screenId: 'verify-email', step: 'verify', submit: 'submit', secondary: 'resend' }
+export const MEMBER_API_BASE_URL = 'https://api.memberportal.example.com';
 ```
 
-The IDs shipped there are placeholders. To find the real ones, run the flow
-once: any screen the app doesn't recognise is displayed by name ("The flow asked
-for *x*, which isn't in SCREEN_MAPPINGS") rather than rendering blank, so the
-flow tells you its own IDs as you step through it. `FLOW_FIELDS` in the same
-file maps our field names to the flow's input names — get these wrong and the
-connector posts nulls to the BFF.
+From a simulator/emulator against a local dev server, use `http://localhost:5000` (iOS) or
+`http://10.0.2.2:5000` (Android — `localhost` is the emulator itself). Plain `http` also needs an ATS
+exception on iOS and `usesCleartextTraffic` on Android, so prefer https.
 
-In the Console → **Flows**, the flow needs four phases and three HTTP connector
-calls to the BFF:
+Until this is set, the wizard's steps 1–2 (email + OTP) still work and steps 3–4 fail with "The
+Member Portal service is not configured."
 
-| Phase | Flow screens | Calls the BFF |
-| --- | --- | --- |
-| 1. Collect details | email, first name, last name, DOB, zip → held in flow state; OTP emailed | — |
-| 2. Verify + sync | OTP entry and validation | `POST /api/initiateRegistration` → member record created *Pending*, returns userID. The Descope user (email-only shadow record) is created **after** this succeeds |
-| 3. Password | password + confirmation | posts them to the BFF, which validates and stores the hash |
-| 4. Complete | SSN / member info | `POST /api/completeRegistration` → eligibility checked against Facets; `subscriberId` and `planId` come back and are mapped into custom JWT claims |
-
-Each of those screens is rendered natively by the matching component in
-`src/screens/register/` — the flow supplies the steps and the logic, not the
-look. It ends by issuing the enriched session JWT, which arrives as a
-`completed` status and is applied by `finishRegistration`.
-
-The BFF side of this — endpoint shapes, how Descope authenticates to it, the
-data model, and the open questions still to settle — is documented in
-[`docs/dotnet-registration-api.md`](../docs/dotnet-registration-api.md).
+The two endpoints, their request/response shapes and how the API validates the Descope token are
+documented in [`docs/dotnet-registration-api.md`](../docs/dotnet-registration-api.md).
 
 ### Passkeys setup (optional)
 
@@ -186,8 +147,8 @@ assetlinks.json** to set up.
 
 (`FlowView` would keep it in-app, but it bridges to *native* passkeys, which do
 need the Associated Domains entitlement — and its ceremony misbehaves on the iOS
-Simulator. Registration uses a different mechanism again: a headless flow with
-native screens, which involves no passkey ceremony at all.)
+Simulator. Registration doesn't use flows at all — it's a native wizard on
+direct SDK calls.)
 
 To enable it:
 
@@ -250,22 +211,33 @@ case a future feature needs it again:
   via `rememberedEmail.ts` and pre-fills it on the next launch.
 - **Forgot password** → `requestPasswordReset` calls `descope.password.sendReset`,
   inline on the Login screen.
-- **Register** → `screens/register/RegisterScreen.tsx` starts the flow, then
-  loops: read the screen the flow asked for, render the matching native step,
-  send the member's input back with that screen's interaction ID. The four
-  phases, their order, and the BFF calls between them live in the flow (see
-  "Registration flow setup" above) — the app supplies the UI and nothing else,
-  and never calls the BFF itself. When the flow reports `completed` it returns
-  the enriched session JWT; `finishRegistration` applies it (`manageSession` +
-  the biometric-enrollment prompt), which swaps the navigator to the Portal.
-
-  Errors come back two ways and are handled differently: a `failed` status ends
-  the flow, while a wrong OTP arrives as an error *attached to the same screen*,
-  so the step re-renders with the message rather than dropping the member out.
-
-  There's no going back a step — the flow holds its state server-side, so the
-  wizard header's back button leaves registration rather than returning to the
-  previous screen.
+- **Register** → `screens/register/RegisterScreen.tsx` orchestrates the wizard,
+  each step its own component in the same folder:
+  1. *Personal Information* (name, DOB, zip, email, optional contact number) →
+     `startRegistration` calls `descope.otp.signUp.email` with **the email
+     alone**, creating a passwordless, email-only user and emailing a 6-digit
+     code. The rest of the form stays in local state for now.
+  2. *Verify Email* → `verifyRegistrationCode` calls `descope.otp.verify.email`,
+     which returns a session — held in local state, **not** applied yet (so the
+     app doesn't jump into the Portal mid-wizard). It authenticates steps 3–4.
+  3. *Review Your Information* — read-only confirmation, editable by going back
+     to step 1. "Confirm & Continue" is what writes the record:
+     `saveRegistrationDetails` → `POST /api/initiateRegistration`, returning the
+     `userId`. Writing it here rather than the moment the OTP is verified means
+     edits on the review step can't leave a stale record behind.
+  4. *Create Account* → `createMemberAccount` → `POST
+     /api/registration/password`. **Descope never receives the password.** The
+     API hashes it and promotes the pending record to a real user. The on-screen
+     checklist and strength meter are generated from `PASSWORD_POLICY` in
+     `types.ts` — keep it in step with the API's `PasswordPolicy` config.
+  5. *(Membership check — not built.)* The design's progress bar counts six
+     steps; step 5 is the SSN/eligibility check. The wizard currently skips
+     straight to the success screen, and the stepper still counts to six so the
+     numbering doesn't shift when it lands.
+  6. *All set* → "Go to Dashboard" calls `finishRegistration`, which finally
+     applies the session held since step 2 (`manageSession` + the
+     biometric-enrollment prompt) — that's what shows the Portal. That session
+     is still valid because no password change ever revoked it.
 - **Biometric** → after any successful sign-in the app *asks* (native confirm
   dialog, never silent) whether to save the refresh token for biometric
   sign-in. The Login screen then shows a "Sign in with Face ID/Fingerprint"
@@ -287,20 +259,19 @@ prompt via **Features → Face ID → Matching Face** when it appears.
 
 ## Notes & limitations
 
-- This is a POC. Descope is the IdP; the .NET BFF owns member data and
-  passwords. Neither the flow (Descope Console) nor the BFF lives in this repo —
-  only the app that hosts them.
-- **Registration can't be exercised from this repo alone.** It needs the flow
-  built in the Console with its connectors pointed at a running BFF. Until
-  `REGISTER_FLOW_ID` is set the Register screen says so rather than failing
-  silently.
+- This is a POC. Descope is the IdP; the .NET registration API owns member data
+  and passwords, and doesn't live in this repo — only the app that calls it.
+- **Registration needs the API running.** Steps 1–2 work against Descope alone;
+  steps 3–4 need `MEMBER_API_BASE_URL` pointed at a reachable service.
+- **Step 5 (membership/eligibility) isn't built** — no SSN, no Facets lookup, no
+  subscriber/plan claims. An earlier draft is on the AUTH-API repo's
+  `claude/registration-descope-passthru` branch.
 - **Sign-in still goes through Descope** (`descope.password.signIn`). Since
-  registration stores the password in ARTS DB instead, that call only succeeds
-  for accounts Descope already holds a password for — until the login flow
-  proxies password validation to the BFF (Login Flow A in the sequence
-  diagram). Same for "Forgot password", which currently sends Descope's own
-  reset email. Newly registered members can still get in via the OTP/passkey
-  sign-in flow.
+  registration stores the password in the .NET database instead, that call only
+  succeeds for accounts Descope already holds a password for — until sign-in is
+  pointed at that database. Same for "Forgot password", which currently sends
+  Descope's own reset email. Newly registered members can still get in via the
+  OTP/passkey sign-in flow.
 - Biometric sign-in and passkeys are unaffected: both work off the Descope
   session/refresh token, not the password.
 - iOS builds require a Mac; on Windows you can build and run the Android app.

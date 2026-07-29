@@ -61,6 +61,14 @@ export default function PersonalInfoStep({ form, onChange, onContinue, busy, onS
         autoComplete="email"
         textContentType="username"
       />
+      <TextField
+        label="Contact number (optional)"
+        placeholder="+14155551234"
+        value={form.phone}
+        onChangeText={phone => onChange({ phone })}
+        keyboardType="phone-pad"
+        textContentType="telephoneNumber"
+      />
 
       <AppButton label="Continue" onPress={onContinue} loading={busy} />
 

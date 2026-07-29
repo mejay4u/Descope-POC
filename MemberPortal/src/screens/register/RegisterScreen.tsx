@@ -1,141 +1,163 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import React, { useState } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { JWTResponse } from '@descope/core-js-sdk';
 import Banner from '../../components/Banner';
 import { useAuth } from '../../auth/useAuth';
-import { useFlowRunner } from '../../services/useFlowRunner';
-import type { FlowInput, FlowResult, FlowScreen } from '../../services/flowRunner';
-import { REGISTER_FLOW_ID, isRegistrationFlowConfigured } from '../../config';
 import { colors, spacing } from '../../theme';
 import type { AuthStackParamList } from '../../navigation/types';
-import { FLOW_FIELDS, emailFromState, mappingFor } from './flowScreens';
 import { EMPTY_FORM, PASSWORD_POLICY, type FormState, type Step } from './types';
 import WizardHeader from './WizardHeader';
 import PersonalInfoStep from './PersonalInfoStep';
 import VerifyEmailStep from './VerifyEmailStep';
+import ReviewInfoStep from './ReviewInfoStep';
 import SetPasswordStep from './SetPasswordStep';
-import MemberInfoStep from './MemberInfoStep';
 import SuccessStep from './SuccessStep';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
+/** Which step the header's back button lands on; absent means "leave the wizard". */
+const PREVIOUS_STEP: Partial<Record<Step, Step>> = {
+  verify: 'personal',
+  review: 'verify',
+  password: 'review',
+};
+
 /**
- * Registration: a Descope Flow rendered with **this app's own native screens**.
+ * The registration wizard: Personal Information -> Verify Email -> Review ->
+ * Create Account -> All set.
  *
- * The flow runs headlessly (see `services/flowRunner.ts`). Descope keeps
- * driving the logic — sending the OTP, holding the entered data in flow state,
- * and calling the BFF through its connectors at each phase — but it never
- * renders anything. Each response names a screen; we look that name up in
- * `flowScreens.ts`, render the matching native step, and send the member's
- * input back with the screen's interaction ID.
+ * Two backends, split by what each is good at:
+ *   - **Descope** proves the member owns the email address (sends and verifies
+ *     the OTP) and issues the session. It stores the email and nothing else.
+ *   - **The MemberPortal API** stores the member record and the password.
  *
- * Phases, per the sequence diagram:
- *   1. details (email, name, DOB, zip) -> flow state, OTP emailed
- *   2. OTP verified -> flow calls `POST /api/initiateRegistration`; the
- *      Pending member record is created before Descope's shadow user exists
- *   3. password -> flow posts it to the BFF, which validates and stores it
- *   4. SSN / member info -> `POST /api/completeRegistration`, eligibility
- *      checked against Facets, subscriber and plan IDs mapped into claims
+ * The session from the verify step is held here rather than applied — it
+ * authenticates the two API calls, and is only activated on the final screen,
+ * so the app doesn't jump into the Portal mid-wizard.
  *
- * When the flow reports `completed` it hands back the enriched session JWT,
- * which `finishRegistration` applies.
+ * The design's progress bar counts six steps; step 5 is the membership check
+ * (SSN / eligibility), which isn't built yet — see `types.ts`.
  */
 export default function RegisterScreen({ navigation }: Props) {
-  const { finishRegistration } = useAuth();
-  const runner = useFlowRunner();
+  const {
+    startRegistration,
+    verifyRegistrationCode,
+    resendRegistrationCode,
+    saveRegistrationDetails,
+    createMemberAccount,
+    finishRegistration,
+  } = useAuth();
 
-  const [screen, setScreen] = useState<FlowScreen | null>(null);
+  const [step, setStep] = useState<Step>('personal');
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [jwt, setJwt] = useState<JWTResponse | null>(null);
+  // Set once the pending record exists in the MemberPortal DB; creating the
+  // account needs it to know which record the password belongs to.
+  const [userId, setUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [starting, setStarting] = useState(true);
 
-  /** Applies whatever the flow returned: next screen, done, or an error. */
-  const apply = useCallback(
-    (result: FlowResult) => {
-      if (result.kind === 'error') {
-        setError(result.error);
-        return;
-      }
-      if (result.kind === 'completed') {
-        setJwt(result.jwt);
-        setError(null);
-        return;
-      }
-      setScreen(result.screen);
-      // An error that arrives with a screen (a wrong code, say) belongs to
-      // that screen, so it replaces rather than clears the banner.
-      setError(result.screen.error ?? null);
-    },
-    [],
-  );
+  const updateForm = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }));
 
-  useEffect(() => {
-    if (!isRegistrationFlowConfigured()) {
-      setStarting(false);
+  const onPersonalContinue = async () => {
+    setError(null);
+    setBusy(true);
+    // Descope only needs the email address — the rest of this form is stored by
+    // the MemberPortal API once the member has confirmed it on the review step.
+    const res = await startRegistration(form.email.trim());
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
       return;
     }
-    let active = true;
-    runner.start(REGISTER_FLOW_ID).then(result => {
-      if (active) {
-        apply(result);
-        setStarting(false);
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [runner, apply]);
+    setStep('verify');
+  };
 
-  const submit = async (interactionId: string, input?: FlowInput) => {
-    if (!screen) {
+  const onVerified = (verifiedJwt: JWTResponse) => {
+    setJwt(verifiedJwt);
+    setError(null);
+    setStep('review');
+  };
+
+  /** Email verified and details confirmed: save the record, then ask for a password. */
+  const onReviewConfirm = async () => {
+    if (!jwt?.sessionJwt) {
+      setError('Your session expired — please verify your email again.');
+      setStep('verify');
       return;
     }
     setError(null);
     setBusy(true);
-    const result = await runner.next(screen, interactionId, input);
+    const res = await saveRegistrationDetails(
+      {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        dob: form.dob.trim(),
+        zip: form.zip.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim() || undefined,
+      },
+      jwt.sessionJwt,
+    );
     setBusy(false);
-    apply(result);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setUserId(res.data.userId);
+    setStep('password');
   };
 
-  const updateForm = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }));
+  const onCreateAccount = async (password: string, confirmPassword: string) => {
+    if (!userId) {
+      setError('Your details were not saved — please confirm your information again.');
+      setStep('review');
+      return;
+    }
+    if (!jwt?.sessionJwt) {
+      setError('Your session expired — please verify your email again.');
+      setStep('verify');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    const res = await createMemberAccount(userId, password, confirmPassword, jwt.sessionJwt);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setStep('success');
+  };
 
   const onFinish = async () => {
     if (jwt) {
+      // The OTP-verify session is still valid — nothing revoked it, since the
+      // password never touched Descope.
       await finishRegistration(jwt);
-      // The session listener in RootNavigator swaps to the Portal.
+      // Session listener in RootNavigator swaps to the Portal automatically.
     }
   };
 
-  // The flow decides which step we're on; the header follows it. Once the flow
-  // has completed there's no screen left, so we show our own success step.
-  const mapping = screen ? mappingFor(screen.screenId) : undefined;
-  const step: Step | undefined = jwt ? 'success' : mapping?.step;
-
   const onHeaderBack = () => {
-    // Steps can't be re-entered: the flow holds the state server-side and has
-    // no "go back" interaction, so leaving means abandoning the registration.
-    navigation.goBack();
+    setError(null);
+    const previous = PREVIOUS_STEP[step];
+    if (previous) {
+      setStep(previous);
+    } else {
+      navigation.goBack();
+    }
   };
 
-  const showHeader = !!step && step !== 'success';
+  const showHeader = step !== 'success';
 
   return (
     <SafeAreaView
       style={styles.safe}
       edges={showHeader ? ['bottom', 'left', 'right'] : ['top', 'bottom', 'left', 'right']}>
-      {showHeader && step && <WizardHeader step={step} onBack={onHeaderBack} />}
+      {showHeader && <WizardHeader step={step} onBack={onHeaderBack} />}
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -143,49 +165,32 @@ export default function RegisterScreen({ navigation }: Props) {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {!!error && <Banner variant="error">{error}</Banner>}
 
-          {starting && (
-            <View style={styles.loading}>
-              <ActivityIndicator size="large" color={colors.brand} />
-            </View>
-          )}
-
-          {!starting && !isRegistrationFlowConfigured() && (
-            <View style={styles.notice}>
-              <Text style={styles.noticeTitle}>Registration isn’t set up yet</Text>
-              <Text style={styles.noticeText}>
-                Build the registration flow in the Descope Console, then set REGISTER_FLOW_ID (and
-                your Project ID) in src/config/index.ts. See the README’s “Registration flow setup”
-                section.
-              </Text>
-            </View>
-          )}
-
           {step === 'personal' && (
             <PersonalInfoStep
               form={form}
               onChange={updateForm}
+              onContinue={onPersonalContinue}
               busy={busy}
-              onContinue={() =>
-                submit(mapping!.submit, {
-                  [FLOW_FIELDS.email]: form.email.trim(),
-                  [FLOW_FIELDS.firstName]: form.firstName.trim(),
-                  [FLOW_FIELDS.lastName]: form.lastName.trim(),
-                  [FLOW_FIELDS.dob]: form.dob.trim(),
-                  [FLOW_FIELDS.zip]: form.zip.trim(),
-                })
-              }
               onSignIn={() => navigation.navigate('Login')}
             />
           )}
 
           {step === 'verify' && (
             <VerifyEmailStep
-              // The flow may echo back the address it sent to; fall back to
-              // what the member typed.
-              email={emailFromState(screen!.state) ?? form.email}
+              email={form.email}
+              verifyCode={verifyRegistrationCode}
+              resend={() => resendRegistrationCode(form.email.trim())}
+              onVerified={onVerified}
+              onError={setError}
+            />
+          )}
+
+          {step === 'review' && (
+            <ReviewInfoStep
+              form={form}
+              onEdit={() => setStep('personal')}
+              onConfirm={onReviewConfirm}
               busy={busy}
-              onSubmit={code => submit(mapping!.submit, { [FLOW_FIELDS.code]: code })}
-              onResend={() => submit(mapping!.secondary ?? mapping!.submit)}
             />
           )}
 
@@ -193,42 +198,12 @@ export default function RegisterScreen({ navigation }: Props) {
             <SetPasswordStep
               email={form.email}
               policy={PASSWORD_POLICY}
+              onCreateAccount={onCreateAccount}
               busy={busy}
-              onSubmit={(password, confirmPassword) =>
-                submit(mapping!.submit, {
-                  [FLOW_FIELDS.password]: password,
-                  [FLOW_FIELDS.confirmPassword]: confirmPassword,
-                })
-              }
             />
           )}
 
-          {step === 'member' && (
-            <MemberInfoStep
-              busy={busy}
-              onSubmit={(ssn, memberId) =>
-                submit(mapping!.submit, {
-                  [FLOW_FIELDS.ssn]: ssn,
-                  ...(memberId ? { [FLOW_FIELDS.memberId]: memberId } : {}),
-                })
-              }
-            />
-          )}
-
-          {step === 'success' && <SuccessStep firstName={form.firstName} onFinish={onFinish} />}
-
-          {/* The flow asked for a screen this app doesn't know how to render.
-              Naming it beats a blank page: it's how you discover the real IDs
-              to put in flowScreens.ts. */}
-          {!starting && !step && screen && (
-            <View style={styles.notice}>
-              <Text style={styles.noticeTitle}>Unmapped flow screen</Text>
-              <Text style={styles.noticeText}>
-                The flow asked for “{screen.screenId}”, which isn’t in SCREEN_MAPPINGS. Add it to
-                src/screens/register/flowScreens.ts and pick the step that should render it.
-              </Text>
-            </View>
-          )}
+          {step === 'success' && <SuccessStep onFinish={onFinish} />}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -239,19 +214,4 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
-  loading: { paddingTop: spacing.xxl },
-  notice: { paddingTop: spacing.xl },
-  noticeTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  noticeText: {
-    color: colors.textMuted,
-    fontSize: 14,
-    lineHeight: 21,
-    textAlign: 'center',
-  },
 });

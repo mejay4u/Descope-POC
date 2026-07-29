@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
+import type { JWTResponse } from '@descope/core-js-sdk';
 import AppButton from '../../components/AppButton';
+import type { AuthResult, VerifyResult } from '../../auth/useAuth';
 import { maskEmail } from '../../utils/maskEmail';
 import { colors, radius, spacing } from '../../theme';
 import { sharedStyles } from './styles';
@@ -10,15 +12,15 @@ const RESEND_COOLDOWN = 30;
 
 type Props = {
   email: string;
-  /** Submits the code into the flow. */
-  onSubmit: (code: string) => void;
-  /** Asks the flow to send another code (its own interaction, not a re-submit). */
-  onResend: () => void;
-  busy: boolean;
+  verifyCode: (email: string, code: string) => Promise<VerifyResult>;
+  resend: () => Promise<AuthResult>;
+  onVerified: (jwt: JWTResponse) => void;
+  onError: (message: string) => void;
 };
 
-export default function VerifyEmailStep({ email, onSubmit, onResend, busy }: Props) {
+export default function VerifyEmailStep({ email, verifyCode, resend, onVerified, onError }: Props) {
   const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(''));
+  const [busy, setBusy] = useState(false);
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN);
   const inputs = useRef<Array<TextInput | null>>([]);
 
@@ -32,10 +34,15 @@ export default function VerifyEmailStep({ email, onSubmit, onResend, busy }: Pro
 
   const code = digits.join('');
 
-  const submit = (fullCode: string) => {
-    if (!busy) {
-      onSubmit(fullCode);
+  const submit = async (fullCode: string) => {
+    setBusy(true);
+    const res = await verifyCode(email, fullCode);
+    setBusy(false);
+    if (!res.ok) {
+      onError(res.error);
+      return;
     }
+    onVerified(res.jwt);
   };
 
   const onDigitChange = (index: number, value: string) => {
@@ -58,10 +65,13 @@ export default function VerifyEmailStep({ email, onSubmit, onResend, busy }: Pro
     }
   };
 
-  const resendCode = () => {
+  const onResend = async () => {
     setDigits(Array(CODE_LENGTH).fill(''));
     setCooldown(RESEND_COOLDOWN);
-    onResend();
+    const res = await resend();
+    if (!res.ok) {
+      onError(res.error);
+    }
   };
 
   return (
@@ -102,7 +112,7 @@ export default function VerifyEmailStep({ email, onSubmit, onResend, busy }: Pro
         {cooldown > 0 ? (
           `Resend code in ${cooldown}s`
         ) : (
-          <Text style={sharedStyles.footerLink} onPress={resendCode}>
+          <Text style={sharedStyles.footerLink} onPress={onResend}>
             Resend code
           </Text>
         )}

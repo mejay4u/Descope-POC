@@ -11,6 +11,8 @@ export const colors = {
   text: '#0F172A',
   textMuted: '#64748B',
   danger: '#DC2626',
+  /** Mid-strength / caution — used by the password strength meter. */
+  warning: '#D97706',
   success: '#16A34A',
   white: '#FFFFFF',
   black: '#000000',

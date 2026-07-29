@@ -7,36 +7,55 @@ import { colors, spacing } from '../../theme';
 import { sharedStyles } from './styles';
 import type { PasswordPolicy } from './types';
 
-// The policy defines a minimum length; this is our own client-side cap on how
-// long a password can be (also enforced via the input's maxLength).
-const MAX_LENGTH = 20;
-
 type Props = {
   email: string;
   policy: PasswordPolicy;
-  /** Submits both values into the flow, which validates them server-side. */
-  onSubmit: (password: string, confirmPassword: string) => void;
+  /** Sends both values to the API, which validates and creates the account. */
+  onCreateAccount: (password: string, confirmPassword: string) => void;
   busy: boolean;
 };
 
-export default function SetPasswordStep({ email, policy, onSubmit, busy }: Props) {
+/** Strength is derived from the same rules the checklist shows, plus length. */
+type Strength = { label: string; color: string; fraction: number };
+
+function strengthOf(password: string, satisfied: number, total: number, policy: PasswordPolicy): Strength {
+  if (password.length === 0) {
+    return { label: '', color: colors.border, fraction: 0 };
+  }
+  // Meeting every rule is the floor, not the ceiling — length beyond the
+  // minimum is what actually makes a password hard to guess, so a password
+  // only reads as Strong once it's comfortably past the minimum.
+  const ruleScore = satisfied / total;
+  const lengthBonus = Math.min(1, password.length / (policy.minLength + 6));
+  const score = ruleScore * 0.6 + lengthBonus * 0.4;
+
+  if (score >= 0.95) {
+    return { label: 'Strong', color: colors.success, fraction: 1 };
+  }
+  if (score >= 0.65) {
+    return { label: 'Medium', color: colors.warning, fraction: 0.66 };
+  }
+  return { label: 'Weak', color: colors.danger, fraction: 0.33 };
+}
+
+export default function SetPasswordStep({ email, policy, onCreateAccount, busy }: Props) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // The checklist mirrors the policy the flow/BFF enforces — it's guidance
-  // while typing, not the validation itself.
+  // The checklist mirrors the policy the API enforces — it's guidance while
+  // typing, not the validation itself.
   const rules = useMemo(() => {
     const list = [
       {
-        label: `Must be between ${policy.minLength} and ${MAX_LENGTH} characters`,
-        valid: password.length >= policy.minLength && password.length <= MAX_LENGTH,
+        label: `Must be between ${policy.minLength} to ${policy.maxLength} characters`,
+        valid: password.length >= policy.minLength && password.length <= policy.maxLength,
       },
     ];
-    if (policy.lowercase) {
-      list.push({ label: 'At least one lowercase letter (a–z)', valid: /[a-z]/.test(password) });
-    }
     if (policy.uppercase) {
       list.push({ label: 'At least one uppercase letter (A–Z)', valid: /[A-Z]/.test(password) });
+    }
+    if (policy.lowercase) {
+      list.push({ label: 'At least one lowercase letter (a–z)', valid: /[a-z]/.test(password) });
     }
     if (policy.number) {
       list.push({ label: 'At least one numeric digit (0–9)', valid: /[0-9]/.test(password) });
@@ -50,38 +69,55 @@ export default function SetPasswordStep({ email, policy, onSubmit, busy }: Props
     return list;
   }, [policy, password]);
 
-  const allValid = rules.every(r => r.valid);
+  const satisfied = rules.filter(r => r.valid).length;
+  const allValid = satisfied === rules.length;
   const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword;
+  const strength = strengthOf(password, satisfied, rules.length, policy);
 
   return (
     <View>
-      <Text style={sharedStyles.title}>Set a strong password</Text>
-      <Text style={sharedStyles.subtitle}>Set a strong password to secure your account.</Text>
+      <Text style={sharedStyles.title}>Set a strong password to secure your account</Text>
 
       <TextField label="Email / User ID" value={email} editable={false} />
       <Text style={styles.hintText}>This email is your User ID and will be used to log in.</Text>
 
       <TextField
-        label="Create password"
+        label="Create Password"
         placeholder="Enter a password"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
         textContentType="newPassword"
-        maxLength={MAX_LENGTH}
+        maxLength={policy.maxLength}
       />
+      {password.length > 0 && (
+        <View style={styles.strengthRow}>
+          <View style={styles.strengthTrack}>
+            <View
+              style={[
+                styles.strengthFill,
+                { backgroundColor: strength.color, flex: strength.fraction },
+              ]}
+            />
+            <View style={{ flex: 1 - strength.fraction }} />
+          </View>
+          <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
+        </View>
+      )}
+
       <TextField
-        label="Confirm password"
+        label="Confirm Password"
         placeholder="Re-enter your password"
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         secureTextEntry
         textContentType="newPassword"
-        maxLength={MAX_LENGTH}
+        maxLength={policy.maxLength}
         errorText={
           confirmPassword.length > 0 && !passwordsMatch ? "Passwords don't match" : undefined
         }
       />
+      {passwordsMatch && <Text style={styles.matchText}>Passwords match</Text>}
 
       <View style={styles.checklist}>
         <Text style={sharedStyles.reviewSection}>Password must contain:</Text>
@@ -96,8 +132,8 @@ export default function SetPasswordStep({ email, policy, onSubmit, busy }: Props
       </View>
 
       <AppButton
-        label="Continue"
-        onPress={() => onSubmit(password, confirmPassword)}
+        label="Create account"
+        onPress={() => onCreateAccount(password, confirmPassword)}
         loading={busy}
         disabled={!allValid || !passwordsMatch}
         style={sharedStyles.actionSpacing}
@@ -109,6 +145,29 @@ export default function SetPasswordStep({ email, policy, onSubmit, busy }: Props
 const styles = StyleSheet.create({
   hintText: {
     color: colors.textMuted,
+    fontSize: 12,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
+  },
+  strengthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
+  },
+  strengthTrack: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+    marginRight: spacing.sm,
+  },
+  strengthFill: { height: 4 },
+  strengthLabel: { fontSize: 12, fontWeight: '700' },
+  matchText: {
+    color: colors.success,
     fontSize: 12,
     marginTop: -spacing.sm,
     marginBottom: spacing.md,

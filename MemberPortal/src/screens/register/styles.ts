@@ -1,7 +1,11 @@
 import { StyleSheet } from 'react-native';
 import { colors, spacing, typography } from '../../theme';
 
-/** Styles shared across the registration wizard's steps. */
+/**
+ * Styles for the native part of registration. Only SuccessStep is left — the
+ * rest of the steps are Descope flow screens now — but these stay shared so a
+ * future native step matches it without copying values.
+ */
 export const sharedStyles = StyleSheet.create({
   title: { ...typography.title, fontSize: 24 },
   subtitle: { ...typography.subtitle, marginTop: spacing.xs, marginBottom: spacing.lg },

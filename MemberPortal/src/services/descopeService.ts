@@ -29,11 +29,10 @@ export function createDescopeService(sdk: DescopeSdk) {
   return {
     // ---- Email + password (sign-in) -------------------------------------
     //
-    // Sign-in and password reset still go through Descope. Registration no
-    // longer stores a password there (it goes to the MemberPortal database via
-    // memberApi.ts), so these succeed only for accounts whose password Descope
-    // still holds, or once the Descope login flow proxies validation to the
-    // MemberPortal API. Routing sign-in through that API is separate work.
+    // Sign-in and password reset still go through Descope. Registration stores
+    // the password in the MemberPortal database instead, so these succeed only
+    // for accounts whose password Descope still holds — until sign-in is
+    // pointed at that database, which is separate work.
 
     async signInWithPassword(email: string, password: string): Promise<VerifyResult> {
       try {
@@ -65,79 +64,12 @@ export function createDescopeService(sdk: DescopeSdk) {
       }
     },
 
-    // ---- Registration: email verification only ----------------------------
+    // ---- Registration -------------------------------------------------------
     //
-    // Descope's entire role in registration is proving the member owns the
-    // email address:
-    //   1. startRegistration      — creates a passwordless, email-only user
-    //                               record and emails an OTP.
-    //   2. verifyRegistrationCode — exchanges the code for a session.
-    // Nothing else is sent here: name, date of birth, zip, phone and the
-    // password go to the MemberPortal API instead (memberApi.ts), so Descope
-    // stores the email address and nothing more. The session from step 2
-    // authenticates those API calls and is applied once the wizard finishes —
-    // see useAuth.ts / RegisterScreen.
-
-    async startRegistration(email: string): Promise<ServiceResult> {
-      try {
-        // No user attributes: the skeleton record is the email address alone.
-        const resp = await sdk.otp.signUp.email(email);
-        if (resp.ok) {
-          return { ok: true };
-        }
-        // The email may already belong to an account from an earlier attempt
-        // that never finished (or any existing account at all) — rather than
-        // dead-ending the wizard with "User already exists", fall back to
-        // sending a normal sign-in code. The rest of the wizard works the same
-        // either way.
-        const retry = await sdk.otp.signIn.email(email);
-        if (retry.ok) {
-          return { ok: true };
-        }
-        return {
-          ok: false,
-          error: resp.error?.errorDescription ?? 'Could not send a verification code.',
-        };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Could not send a verification code.') };
-      }
-    },
-
-    /**
-     * Resends a code. `startRegistration`'s `otp.signUp.email` already created
-     * the user on the first call, so calling it again fails with "User already
-     * exists" — use the sign-in delivery instead, which just (re)sends a code
-     * for a loginId that's already there.
-     */
-    async resendRegistrationCode(email: string): Promise<ServiceResult> {
-      try {
-        const resp = await sdk.otp.signIn.email(email);
-        if (!resp.ok) {
-          return {
-            ok: false,
-            error: resp.error?.errorDescription ?? 'Could not resend the verification code.',
-          };
-        }
-        return { ok: true };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Could not resend the verification code.') };
-      }
-    },
-
-    async verifyRegistrationCode(email: string, code: string): Promise<VerifyResult> {
-      try {
-        const resp = await sdk.otp.verify.email(email, code);
-        if (!resp.ok || !resp.data) {
-          return {
-            ok: false,
-            error: resp.error?.errorDescription ?? 'Invalid code. Please try again.',
-          };
-        }
-        return { ok: true, jwt: resp.data };
-      } catch (e) {
-        return { ok: false, error: messageFor(e, 'Invalid code. Please try again.') };
-      }
-    },
+    // Nothing here: registration is a Descope Flow, run by FlowView in
+    // RegisterScreen. The flow's own screens collect the details, the Descope
+    // engine calls the BFF, and the finished session comes back through
+    // FlowView's onSuccess — no SDK calls from the app at any point.
 
     // ---- Session lifecycle --------------------------------------------------
 

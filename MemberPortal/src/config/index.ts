@@ -1,35 +1,30 @@
 /**
  * App configuration.
  *
- * The app talks to two backends:
- *   - **Descope** — the identity provider. During registration it only proves
- *     the member owns their email address (sends and verifies the OTP) and
- *     stores that email as the login ID. It never receives the password.
- *   - **The MemberPortal .NET API** — owns the member record: the registration
- *     details captured by the wizard and the password. See
- *     src/services/memberApi.ts.
+ * Descope is the only service this app talks to. Registration runs as a
+ * Descope Flow: the flow collects the member's details and the Descope engine
+ * calls the MemberPortal .NET API server-to-server, so the app itself never
+ * calls that API — it hosts the flow and applies the session it finishes with.
+ * See src/screens/RegisterScreen.tsx and
+ * docs/descope-registration-flow-setup.md.
  *
  * 1. Get your Project ID from https://app.descope.com/settings/project
  * 2. Paste it into DESCOPE_PROJECT_ID (or wire it up via react-native-config).
- * 3. Point MEMBER_API_BASE_URL at your .NET API.
+ * 3. Set REGISTER_FLOW_ID to the registration flow you built in the Console.
  */
 
 // Paste your Descope Project ID here (or wire up react-native-config / .env).
 export const DESCOPE_PROJECT_ID = 'YOUR_DESCOPE_PROJECT_ID';
 
 /**
- * Base URL of the MemberPortal .NET API — scheme + host (+ port), no trailing
- * path; the endpoint paths live in `src/services/memberApi.ts`.
+ * ID of the registration flow from https://app.descope.com/flows — the one
+ * implementing the phases (collect details → verify OTP → create user → set
+ * password), with the HTTP connectors that call the .NET API.
  *
- *   export const MEMBER_API_BASE_URL = 'https://api.memberportal.example.com';
- *
- * Running against a local .NET dev server from a simulator/emulator:
- *   - iOS Simulator:    'http://localhost:5000'
- *   - Android emulator: 'http://10.0.2.2:5000'  (localhost is the emulator itself)
- * Plain http also needs an ATS exception (iOS) / cleartext traffic enabled
- * (Android) — use https where you can.
+ * It's an UNAUTHENTICATED flow: it runs for someone who has no account yet.
+ * See docs/descope-registration-flow-setup.md for how to build it.
  */
-export const MEMBER_API_BASE_URL = 'YOUR_MEMBER_API_BASE_URL';
+export const REGISTER_FLOW_ID: string = 'YOUR_REGISTER_FLOW_ID';
 
 /**
  * Custom URL scheme used as the redirect target for the password-reset email,
@@ -72,9 +67,9 @@ function isPlaceholder(value: string): boolean {
   return value.length === 0 || value.startsWith('YOUR_');
 }
 
-/** Whether the MemberPortal .NET API base URL has been filled in. */
-export function isMemberApiConfigured(): boolean {
-  return !isPlaceholder(MEMBER_API_BASE_URL);
+/** Whether the registration flow is usable (project ID + flow ID set). */
+export function isRegistrationFlowConfigured(): boolean {
+  return !isPlaceholder(DESCOPE_PROJECT_ID) && !isPlaceholder(REGISTER_FLOW_ID);
 }
 
 /** Whether usable passkey flows are configured (project ID + both flow IDs set). */

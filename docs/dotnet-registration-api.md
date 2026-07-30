@@ -1,27 +1,40 @@
-# MemberPortal registration API — the contract the app depends on
+# MemberPortal registration API — the contract the flow depends on
 
-The two endpoints the app calls after Descope has verified the member's email. Implemented in the
-**AUTH-API** repo under `registration/`; this document is the app's side of the agreement.
+The two endpoints called during registration, implemented in the **AUTH-API** repo under
+`registration/` (branch `claude/registration-descope-passthru`). This document is the Descope side of
+the agreement — what the flow's connectors send, and what they must get back.
 
-See [`architecture.md`](architecture.md) for why the split is drawn this way.
+See [`architecture.md`](architecture.md) for why the split is drawn this way, and
+[`descope-registration-flow-setup.md`](descope-registration-flow-setup.md) for building the flow that
+makes these calls.
 
 ## Who calls, and with what
 
-The **mobile app** calls these directly — not Descope. Every call carries the Descope session JWT the
-app received from `otp.verify.email`:
+**Descope's flow engine calls these, server to server.** The mobile app does not — it hosts the flow
+and never touches this API. There is no member session token on these requests, because at the moment
+they fire the member has no session yet.
 
 ```
-Authorization: Bearer <descope session jwt>
+Content-Type: application/json
+X-Connector-Key: <shared secret>
 ```
 
-That token is the only evidence these endpoints have that the email address was verified, so it must
-be validated, not merely decoded: signature against Descope's JWKS for the project
-(`https://api.descope.com/<projectId>/.well-known/jwks.json`), issuer equal to the project ID, and
-lifetime. The app times out after 15 seconds.
+That key is load-bearing in a way that's easy to miss. The flow only reaches these endpoints *after*
+it has verified the OTP, so the key is the **only** evidence the API has that the email address was
+verified at all. Anyone who can present it can create a registration for any address. Treat it like a
+signing key: store it in Key Vault, never in source, and rotate it by configuring two keys at once.
+
+The API accepts a list of keys and compares in constant time without short-circuiting on the first
+match. Startup fails if neither a key nor the development `AllowAnonymous` escape hatch is set.
+
+**Reachability:** connectors run from Descope's cloud, so the API must be publicly resolvable —
+`localhost`, `10.0.2.2` and private addresses will not work. A tunnel (ngrok, Cloudflare Tunnel) or a
+deployed environment is a prerequisite for testing the flow end to end.
 
 ## 1. `POST /api/initiateRegistration`
 
-Stores the reviewed registration details and returns the pending record's id.
+Fired by the connector immediately after the OTP is verified. Stores the details the flow has been
+holding in flow state, and returns the pending record's id.
 
 ```jsonc
 // request
@@ -29,9 +42,9 @@ Stores the reviewed registration details and returns the pending record's id.
   "email": "jane@example.com",
   "firstName": "Jane",
   "lastName": "Member",
-  "dateOfBirth": "1985-04-23",   // ISO; the app's form collects MM/DD/YYYY and converts
+  "dateOfBirth": "1985-04-23",    // ISO yyyy-MM-dd — see the note below
   "zipCode": "12345",
-  "contactNumber": "123-456-7890" // null when not provided
+  "contactNumber": "123-456-7890" // optional; omit or null
 }
 
 // 200
@@ -40,19 +53,23 @@ Stores the reviewed registration details and returns the pending record's id.
 
 Required behavior:
 
-- **Cross-check the email** against the token's email claim; `403` on mismatch. A valid token for one
-  address must not be able to register another. (Descope projects vary on whether the session token
-  carries an email claim — if yours doesn't, add it as a custom claim or resolve it via the Management
-  SDK rather than skipping the check.)
-- **Record the token's `sub`** as `DescopeUserId` on the member. This is what lets the Auth API later
-  exchange a validated Descope token for its own enriched token without matching on email.
-- **Resume, don't duplicate.** A member who abandons the wizard and starts again must get the same
-  `userId` back rather than a duplicate-key error. An expired pending record is replaced.
+- **Resume, don't duplicate.** A member who abandons the flow and starts again gets the same `userId`
+  back rather than a duplicate-key error. An expired pending record is replaced.
 - **`409`** if the email already has a completed account.
+- Store the record as **Pending**. It is not an account yet — no password, no sign-in.
+
+The flow must capture `userId` from the response into flow state; call 2 is useless without it.
+
+> **`dateOfBirth` must arrive as ISO `yyyy-MM-dd`.** If the flow screen collects MM/DD/YYYY, convert
+> before the connector fires — a `DateOnly` bind failure returns a 400 that doesn't explain itself.
+
+> There is **no `emailVerified` flag** in the request or the schema. Verification is proven by the
+> ordering (the connector fires only after the OTP step) plus the connector key. That is the whole
+> argument, which is why the key matters as much as it does.
 
 ## 2. `POST /api/registration/password`
 
-The Create Account button. Sets the password and creates the account.
+Fired after the flow's password screen. Sets the password and creates the account.
 
 ```jsonc
 // request
@@ -65,15 +82,23 @@ The Create Account button. Sets the password and creates the account.
 Required behavior:
 
 - Hash it (PBKDF2 / bcrypt / Argon2 — not a bare SHA) and promote the pending record to a real user
-  **under the same id**, so the identifier the app has held since call 1 stays valid.
-- Enforce the password policy server-side. The app's checklist mirrors it but is not validation.
+  **under the same id**, so the identifier the flow captured in call 1 stays valid.
+- Enforce the password policy server-side. The flow screen's validation mirrors it but is not
+  validation.
 - Never log the password or let it reach request-logging middleware.
+
+**Descope never receives this password.** That is the fixed constraint, and it is also why sign-in
+does not yet work for members registered this way — see `architecture.md`.
+
+> ⚠️ The sequence diagram draws **both** calls against `/api/initiateRegistration` (steps 6 and 13)
+> with different bodies. Read as a copy-paste slip: the password call keeps its own route. If it
+> genuinely has to share the path, the handler would need to branch on payload shape — worth avoiding.
 
 ## Password policy
 
-The app's checklist (`PASSWORD_POLICY` in `src/screens/register/types.ts`) and the API's
-`PasswordPolicy` config must agree, or members are told one thing and refused for another. Current
-values, from the Create Account design:
+The flow's password screen and the API's `PasswordPolicy` config must agree, or members are told one
+thing and refused for another. This is now the **only** place the two can drift, since the app no
+longer renders the password screen. Current values, from the Create Account design:
 
 | Rule | Value |
 | --- | --- |
@@ -85,13 +110,19 @@ values, from the Create Account design:
 
 ## Errors
 
-The app shows your message to the member as-is. It reads, in order: ProblemDetails `detail`, the first
-entry of the validation `errors` dictionary, `title`, then a plain `{ "message": … }`, falling back to
-the status code. Return something a member can act on, never an internal exception.
+Responses are ProblemDetails. The flow's connector step needs a **failure branch** on each call, or a
+`400`/`409`/`500` dead-ends the member on a spinner with nothing on screen. Route the failure to a
+screen that shows the API's `detail` — it is written to be read by a member — and offer a way back.
+
+`401` means the connector key is wrong or missing. That is a configuration fault, not something a
+member can act on; show a generic message and alert on it.
 
 ## Not in this contract
 
-- **Step 5 — membership/eligibility** (SSN, plan lookup, subscriber and plan IDs). Deferred.
+- **Phase 4 — membership/eligibility** (SSN, Facets lookup, subscriber and plan IDs). Deferred.
 - **Sign-in.** The password lives in this database now, so sign-in has to be validated against it —
   currently unresolved, and the next piece of work.
-- **The enriched token.** The Auth API mints it; it isn't part of the registration wizard.
+- **The enriched token.** The Auth API mints it; it is not part of registration.
+- **`DescopeUserId`.** The column and plumbing exist, but nothing populates it: under this ordering
+  the Descope user is created *after* call 1 returns, so there is no `sub` to record. Until a later
+  step populates it, the Descope↔member link is the email address.

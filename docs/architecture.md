@@ -1,94 +1,103 @@
 # Member Portal — architecture and the decisions behind it
 
-The short version: **Descope verifies email addresses and issues sessions. We own everything else.**
+The short version: **Descope verifies email addresses, runs the registration flow, and issues
+sessions. We own everything else.**
 
 | | Descope | MemberPortal .NET API |
 | --- | --- | --- |
 | Holds | the email address (login ID), sessions, biometric/passkey bindings | the member record, the **password**, and later the eligibility data |
-| Does | sends and verifies the email OTP; mints the session token | stores the record, hashes the password, and will mint the enriched token |
+| Does | renders the registration flow, sends and verifies the OTP, calls our API, mints the session | stores the record, hashes the password, and will mint the enriched token |
 | Never sees | the password, or any profile field | — |
 
-Nothing but the email address is shared with Descope. That is the fixed constraint everything below
-follows from.
+Nothing but the email address is *stored* in Descope. That is the fixed constraint everything below
+follows from. Note the word: during registration the member's details do pass through Descope's **flow
+state** in transit — see "Open questions".
 
 ## Registration
 
-A six-step native wizard in the app. Steps 1–2 are Descope, 3–4 are ours, 5 isn't built yet.
+A **Descope flow**, built in the Console and embedded in the app with `FlowView`. The app hosts it and
+nothing more: it never collects the data and never calls the API.
 
-| Step | Screen | What runs |
+| Phase | What runs | Who calls |
 | --- | --- | --- |
-| 1 | Personal Information | `descope.otp.signUp.email(email)` — **email only** — creates a passwordless Descope user and emails a code |
-| 2 | Verify Email | `descope.otp.verify.email` returns a session, held in app state, not yet applied |
-| 3 | Review Your Information | `POST /api/initiateRegistration` stores the reviewed record, returns `userId` |
-| 4 | Create Account | `POST /api/registration/password` hashes the password and promotes the record to a real user |
-| 5 | *(membership check)* | Not built — SSN / eligibility / plan lookup |
-| 6 | All set | The held session is applied; the app lands on the Portal |
+| 1 | Screens collect email, name, DOB, zip; OTP emailed | Descope |
+| 2 | OTP verified → `POST /api/initiateRegistration` → record stored **Pending**, `userId` returned → Descope creates its passwordless shadow record | Descope engine → our API |
+| 3 | Password screen → `POST /api/registration/password` → password hashed, record promoted to a real user | Descope engine → our API |
+| — | Flow issues the session; the app shows "You're all set!" and applies it | Descope → app |
+| 4 | SSN / eligibility / plan lookup | **not built** |
 
-Both API calls carry the Descope session JWT as a bearer token; the API validates it against Descope's
-JWKS and cross-checks the email claim against the body. The API also records the token's `sub` as
-`DescopeUserId` on the member — see "Where claims live" below for why.
+Both API calls are authenticated with a **connector key** — a shared secret in a header, configured on
+the Descope connector. There is no member token on them; the caller is Descope's engine.
+
+Build instructions for the flow: [`descope-registration-flow-setup.md`](descope-registration-flow-setup.md).
+The API contract: [`dotnet-registration-api.md`](dotnet-registration-api.md).
 
 ## The decisions, and what they rule out
 
-### The app calls the API; Descope does not
+### Registration is a flow, not SDK calls
 
-The original sequence diagram had Descope's flow engine calling the API through HTTP connectors
-("passthru"), with the app rendering the flow's screens. We build it the other way: the app
-orchestrates and calls the API directly, with the IdP doing authentication only.
+An earlier iteration had the app orchestrate registration with direct SDK calls (`otp.signUp.email`,
+`otp.verify.email`) and call the API itself with the member's session token. That is the more common
+pattern for a mobile app plus an IdP, and it is simpler: business logic stays in version-controlled,
+testable code rather than console configuration.
 
-Why: enrollment rules — age limits, ZIP formats, password policy, resume-on-retry, duplicate handling
-— are business logic. In code they are version-controlled, unit-tested, code-reviewed and revertible.
-In a flow they are configuration in a vendor console, changed instantly and invisibly, with an app
-release cycle that can't keep up. Descope's own guidance limits Bring Your Own Screen to exceptional
-cases for the same reason.
+We build the flow instead because the sequence diagram requires the **Descope engine** to call the
+BFF, and because it keeps the API off the public path for member devices. The costs are real and worth
+stating: the registration steps, their order and their validation now live in a vendor console rather
+than in git, so they are not code-reviewed, not unit-tested, and not revertible with a `git revert`.
+Flow edits also reach members instantly, with no app-release gate.
 
-**The one condition that would reverse this:** if the API must not be internet-facing. If network
-policy forbids it, passthru wins and the console coupling is the price. That question is worth
-putting to the security team explicitly rather than inferring — it is the only argument that beats
-the above. (An earlier passthru implementation is on the AUTH-API repo's
-`claude/registration-descope-passthru` branch if it ever comes back.)
-
-Note this changes the *transport*, not the architecture: the data boundaries in the table above are
-exactly what the diagram specifies.
+**Descope renders the screens** (not BYOS). That means the Figma designs for Personal Information,
+Verify Email, Review and Create Account are rebuilt as flow screens; only "You're all set!" stays
+native. BYOS would have kept the native designs but couples the app to screen and interaction IDs that
+a console edit can break in already-shipped apps — Descope's own guidance limits it to exceptional
+cases.
 
 ### Where claims live
 
 Requirement: the session token should carry member claims (subscriber, plan). Constraint: only the
-email is shared with Descope. Those collide — a claim inside a Descope-issued token means Descope
-holds that value at issuance.
+email is stored in Descope. Those collide — a claim inside a Descope-issued token means Descope holds
+that value at issuance.
 
 **Resolution: the .NET API mints its own enriched token.** Descope proves identity; the Auth API
 validates that token and issues its own RS256 JWT carrying LOBs, plan IDs and subscriber — which it
 already does today for password sign-in. Downstream services validate ours. Descope's token stays a
-pure authentication artifact, and the "email only" constraint holds literally.
-
-`DescopeUserId` on the member record exists for exactly this: it maps a Descope subject to a member
-without matching on email.
+pure authentication artifact.
 
 The alternative — a Descope **JWT Template** projecting user custom attributes into claims — works and
-survives refresh, but requires putting subscriber and plan IDs into Descope. Available if the team
-decides that's acceptable.
+survives refresh, but requires putting subscriber and plan IDs into Descope.
 
-Note what is *not* the answer: a flow's Custom Claims action. Those apply to the token that flow
+What is *not* the answer: a flow's Custom Claims action. Those apply only to the token that flow
 issues. Members signing in with biometrics (a refresh) or a passkey (a different flow) never run the
 registration flow, so their tokens wouldn't carry the claims.
 
-### What Descope is still used for
+`DescopeUserId` exists on the member record for the exchange, but is **currently always null**: the
+flow creates its shadow record only *after* `initiateRegistration` returns, so there is no id to
+record at that moment. Until a later step populates it, the Descope-to-member link is the email.
 
-Email OTP, sessions, and the two features that are genuinely hard to build well: **biometric sign-in**
-(refresh token gated behind an OS biometric prompt) and **passkeys** (WebAuthn via a hosted flow).
-Neither depends on where member data lives.
+### What Descope is used for beyond registration
 
-## Known gaps
+Sessions, and the two features that are genuinely hard to build well: **biometric sign-in** (refresh
+token gated behind an OS biometric prompt) and **passkeys** (WebAuthn via a hosted flow). Neither
+depends on where member data lives, and neither is affected by the registration architecture.
+
+## Known gaps and open questions
 
 - **Sign-in doesn't work for members registered this way.** The password is in our database, and
-  `descope.password.signIn` doesn't know about it. Pointing sign-in at the API is the next real piece
-  of work.
-- **Step 5 (eligibility) isn't built**, and with it the subscriber/plan values the enriched token is
+  `descope.password.signIn` doesn't know about it. Closing it means the app posting credentials to our
+  API, the API validating them and then minting a Descope session via an **embedded link**
+  (`generateEmbeddedLink` + magic-link verify), so Descope still never sees a password. That's the next
+  real piece of work, and the natural moment to build the token exchange.
+- **Flow state is not "nothing shared".** The member's details sit in Descope's flow state during
+  registration. Whether that is purely transient is Descope's implementation detail; for a payer system
+  the question is usually whether a third party *processes* the data at all, which affects BAA scope
+  regardless of retention. Worth confirming in writing rather than inferring.
+- **Step 10's ordering may not be buildable as drawn.** The diagram creates the Descope user only after
+  our API confirms, but Descope needs a user to exist before it can email them an OTP. Resolve in the
+  Console; it may force a change to the diagram.
+- **Password policy is defined twice** — on the flow's password screen and in the API's config. Drift
+  means members are rejected after typing a password the screen accepted.
+- **Step 4 (eligibility) isn't built**, and with it the subscriber/plan values the enriched token is
   meant to carry.
-- **Orphaned Descope users.** A member who verifies their email and then abandons the wizard leaves a
-  Descope user with no member record. It self-heals if they return — `startRegistration` falls back to
-  `otp.signIn.email` for an existing address — so the residue is only unused records from people who
-  never come back. Worth a cleanup job eventually, not a correctness problem.
 - **The .NET service has never been compiled here** (no SDK available in this environment), so expect
-  to shake out build errors on first `dotnet build`.
+  build errors on the first real `dotnet build`.

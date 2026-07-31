@@ -18,13 +18,14 @@ depend on the backend existing or being reachable.
 | Diagram step | What it is here |
 | --- | --- |
 | 1–2 | Screen: Personal Information → data held in **flow state** |
-| 3 | Action: Send OTP (email) |
-| 4–5 | Screen: Verify Email → Action: Verify OTP |
+| 3–5, **10** | Action: `Sign Up or In / OTP / Email` — one composite that sends the code, verifies it, **and** creates the email-only shadow record |
 | 6–9 | *(gap — connector 1 to the BFF, delivery phase 3)* |
-| 10 | Action: Create User — the passwordless shadow record, **email only** |
 | 11–12 | Screen: Create Account (password + confirm) |
 | 13–15 | *(gap — connector 2 to the BFF, delivery phase 3)* |
 | 16 | End the flow, issuing a session JWT |
+
+Note where step 10 landed: the diagram creates the user *after* the BFF confirms, and that isn't
+buildable — the OTP action creates it up front. See §6.
 
 Descope holds **nothing but the email address**. That is the fixed constraint — no name, no date of
 birth, no phone, and never the password.
@@ -54,7 +55,7 @@ The categories used here:
 | Category | For |
 | --- | --- |
 | **Screen** | anything the member sees — opens the widget-based Screen Builder |
-| **Action** | Send OTP, Verify OTP, Create User |
+| **Action** | the OTP exchange — one composite action, see §5 |
 | **Connector** | the two BFF calls (delivery phase 3) |
 | **Condition** | branching on a failed BFF call (delivery phase 3) |
 
@@ -77,25 +78,43 @@ Plus a submit button.
 a mismatch sends `null` to the BFF rather than failing loudly — the member gets a record with a missing
 field instead of an error.
 
-## 5. Send the OTP
+## 5. OTP — one action, not three
 
-Add an **Action → Send OTP**, email delivery, addressed to the `email` field from the previous screen.
+**There is no standalone "Send OTP" action, and no separate "Verify OTP".** The Add Action dialog
+offers composites; the one to use is:
 
-## 6. Screen — Verify Email
+> **`Sign Up or In / OTP / Email`**
 
-A screen with a 6-digit code input, a submit action, and a **resend** action. Then an
-**Action → Verify OTP**.
+It does the whole exchange — collects the login ID, sends the code, shows the code screen, verifies it,
+**and creates the user**. Drop it on the canvas and it expands into those steps; edit the screens it
+brings with it rather than adding your own.
 
-## 7. Create the user (the shadow record)
+Configure it against the `email` field from §4, and **map nothing else into it**. If your version
+offers user-attribute mapping on sign-up, leave it empty — Descope holds the email address and nothing
+more.
 
-Add an **Action → Create User** (or the sign-up equivalent) with the **email only**.
+Use the **"Sign Up or In"** variant, not a sign-up-only one. That's what makes the resume path work: a
+member who abandoned registration already exists in Descope, and sign-up-only would refuse them at the
+door.
 
-⚠️ **Resolve this early — it's the one thing that may not work as the diagram draws it.** Diagram step
-10 puts user creation *after* the BFF confirms, so that a BFF failure leaves no orphan Descope user.
-But Descope needs a user to exist before it can email them an OTP, which happens back at step 3. Check
-in the builder whether your OTP send/verify steps can run against an identifier without a user record,
-with creation deferred until later. If they can't, the ordering has to change and the diagram needs
-updating — flag it rather than quietly reordering.
+Edit the code screen it generates to match the Figma *Verify Email* design, and confirm it exposes a
+**resend** action.
+
+## 6. There is no separate "create the user" step
+
+The §5 action already created the shadow record — its own description says so: *"Users that try to sign
+in but don't exist in the Descope users table will be automatically created."* Don't add a Create User
+action; you'd be creating a user that exists.
+
+⚠️ **This settles the ordering question, and not in the diagram's favour.** Diagram step 10 puts user
+creation *after* the BFF confirms, so a BFF failure leaves no orphan Descope user. That sequence cannot
+be built: the composite creates the user when the OTP is sent, before verification and well before the
+BFF is called. There is no arrangement of these steps that produces the diagram's order.
+
+What it costs: a member who abandons after entering their email leaves an email-only Descope user with
+no matching record on our side. It self-heals — they return, the same action signs them in, and
+`initiateRegistration` hands back the same `userId` — but orphans accumulate, so they want a scheduled
+cleanup. Take this back to whoever owns the diagram; the drawing needs to change, not the flow.
 
 ## 8. Screen — Create Account (password)
 
@@ -123,7 +142,7 @@ finished but returned no session."* That's the single most likely thing to get w
 
 Leave the wiring points where the BFF calls will be inserted in delivery phase 3:
 
-- between **§6** (Verify OTP) and **§7** (Create User) — connector 1, `initiateRegistration`
+- immediately after the **§5** OTP action — connector 1, `initiateRegistration`
 - after **§8** (password screen) — connector 2, the password call
 
 Until then the flow runs end to end without touching our backend, which is exactly what makes this
@@ -143,7 +162,7 @@ Run the flow in the **Console's flow runner** and confirm:
 - The flow ID is recorded.
 - The screens' field names are written down (delivery phase 3 needs them).
 - The runner completes end to end.
-- You've resolved the §7 ordering question one way or the other.
+- The step-10 ordering change (§6) has been raised with whoever owns the diagram.
 
 ## Gotchas
 
@@ -153,8 +172,13 @@ doesn't explain itself.
 
 **The Figma has a Review screen (step 3) that the diagram doesn't.** With Descope rendering the
 screens, the app can't show it — the app never sees the entered values. Either add a review screen to
-this flow between §6 and §8, or accept that the step disappears. Decide before building §8, since it
+this flow between §5 and §8, or accept that the step disappears. Decide before building §8, since it
 changes the screen count members see.
+
+**Abandoned registrations leave orphan Descope users.** A consequence of §6: the shadow record is
+created when the OTP is sent, so anyone who quits at the code screen leaves an email-only user with
+nothing behind it. Harmless individually — they self-heal on return — but they need a cleanup job
+before this goes anywhere near production.
 
 **Flow edits are live edits.** There's no app release gate between changing a screen here and members
 seeing it. Smaller blast radius than BYOS — there are no screen IDs for the app to drift against — but

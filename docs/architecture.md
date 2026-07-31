@@ -92,9 +92,11 @@ depends on where member data lives, and neither is affected by the registration 
   registration. Whether that is purely transient is Descope's implementation detail; for a payer system
   the question is usually whether a third party *processes* the data at all, which affects BAA scope
   regardless of retention. Worth confirming in writing rather than inferring.
-- **Step 10's ordering may not be buildable as drawn.** The diagram creates the Descope user only after
-  our API confirms, but Descope needs a user to exist before it can email them an OTP. Resolve in the
-  Console; it may force a change to the diagram.
+- **Step 10's ordering is not buildable as drawn — confirmed.** The diagram creates the Descope user
+  only after our API confirms, so a failed call leaves no orphan. Descope's OTP step is a single
+  composite action (`Sign Up or In / OTP / Email`) that creates the user when it sends the code, so
+  creation always precedes our call. The diagram needs updating. The cost is orphan email-only users
+  from abandoned registrations; they self-heal on return, but want a cleanup job.
 - **Password policy is defined twice** — on the flow's password screen and in the API's config. Drift
   means members are rejected after typing a password the screen accepted.
 - **Step 4 (eligibility) isn't built**, and with it the subscriber/plan values the enriched token is

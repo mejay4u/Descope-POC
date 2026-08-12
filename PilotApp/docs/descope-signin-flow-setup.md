@@ -10,9 +10,8 @@ both.
 
 > **On labels:** the Console changes between releases. Where a label here doesn't match what you see,
 > the concept still holds — find the equivalent rather than assuming the step is wrong. `docs.descope.com`
-> blocks automated fetches, so these steps come from Descope's documented structure and from what
-> already works in the MemberPortal app in this repo; they have not been replayed against a live
-> console.
+> blocks automated fetches, so these steps are written from Descope's documented structure and have not
+> been replayed against a live console.
 
 ## What you're building
 
@@ -24,17 +23,13 @@ both.
 | §5 | `pilot-sign-in` flow | password, then OTP when the device isn't trusted |
 | §6 | `pilot-passkey-signin` + `pilot-passkey-add` | passkeys, in a browser rather than in-app |
 
-**This differs from the MemberPortal app in the same repo**, and the difference is the whole point:
-there, Passwords is deliberately *off* and the password lives in a .NET database. Here Descope holds
-the password and no backend is involved in signing in at all. Don't reuse that project — use a new one,
-or at minimum a new set of flows.
-
 ## 1. Prerequisites
 
-1. A Descope project. Copy the **Project ID** from **Project Settings** — the app needs it in
-   `src/config/index.ts`.
-2. Decide now whether this is a new project or the existing one. If you reuse the MemberPortal project,
-   turning Passwords on changes that app's assumptions too.
+**Use a dedicated Descope project for this pilot.** Every step below changes project-wide settings —
+enabling Passwords, adding custom attributes, assigning a JWT Template — and those apply to every app
+pointed at the project. Starting clean means nothing here can surprise something else.
+
+Copy the **Project ID** from **Project Settings**; the app needs it in `src/config/index.ts`.
 
 ## 2. Authentication methods
 
@@ -50,8 +45,9 @@ Also under project settings, add **`pilotapp://auth`** to the **approved redirec
 browser-hosted passkey flow returns through it; without it the flow completes and the app sits there
 having received nothing.
 
-**Password policy:** set it here, and write down what you chose. It is the only place it's defined —
-unlike MemberPortal, where the policy existed in two places and could drift.
+**Password policy:** set it here, and write down what you chose. This is the only place it's defined —
+keep it that way. A policy duplicated anywhere else drifts, and the symptom is a member being rejected
+for a password the screen just accepted.
 
 ## 3. Custom attributes
 
@@ -138,10 +134,9 @@ Wire the screen into a **password sign-in** action, configured against the `emai
 fields from step 1.
 
 Use a **sign-in only** action, not a "sign up or in" composite. This matters: sign-up-or-in composites
-**create the user** if they don't exist. That's what produces orphan email-only users in the
-MemberPortal registration flow (see `docs/descope-registration-flow-setup.md` §6 in this repo), and
-this pilot has no registration story at all — members are seeded by hand in §7. An unknown email should
-fail, not quietly create an account.
+**create the user** if they don't exist — Descope's own description of them says so. This pilot has no
+registration at all; members are seeded by hand in §7. An unknown email should fail, not quietly become
+an account, and a typo'd address should not leave a half-made user behind.
 
 ### Step 3 — Condition on `deviceTrusted`
 

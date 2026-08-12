@@ -13,8 +13,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
 /**
  * There is no "Create Account" here on purpose: this pilot is sign-in only.
  * Members are seeded in the Descope Console (Users → + User, with the four
- * custom attributes set). Registration is a separate piece of work — the
- * MemberPortal app in this repo has one.
+ * custom attributes set). Registration is out of scope — see docs/architecture.md.
  */
 export default function WelcomeScreen({ navigation }: Props) {
   const { appName, tagline, Logo } = useBranding();

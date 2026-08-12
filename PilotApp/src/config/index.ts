@@ -1,10 +1,9 @@
 /**
  * Pilot App configuration.
  *
- * Descope is the only service this app talks to. Unlike the MemberPortal app in
- * this repo, the Pilot App keeps the **password in Descope** — there is no BFF
- * in the sign-in path at all. Descope authenticates the member and issues a
- * session JWT carrying custom member claims (see `src/auth/claims.ts`).
+ * Descope is the only service this app talks to. It holds the password,
+ * authenticates the member, and issues a session JWT carrying custom member
+ * claims (see `src/auth/claims.ts`). There is no backend in the sign-in path.
  *
  * Setup:
  *   1. Get your Project ID from https://app.descope.com/settings/project

@@ -15,11 +15,8 @@ there by a Descope **JWT Template**, so they survive a token refresh and appear 
 Portal screen renders them, which is how you can see at a glance that the setup worked.
 
 There is **no registration**: members are seeded by hand in the Descope Console. This is a pilot for the
-sign-in half only.
-
-> This app sits alongside `MemberPortal/` in the same repo and is built on the **opposite credential
-> model** — here Descope holds the password. [`docs/architecture.md`](docs/architecture.md) explains
-> why, and what that trades away.
+sign-in half only — see [`docs/architecture.md`](docs/architecture.md) for what that scope deliberately
+leaves out.
 
 ## Getting it running
 
@@ -121,7 +118,9 @@ The two worth knowing before you demo this:
 
 - **The trusted-device flag is client-supplied and is not a security boundary.** A modified build can
   skip the OTP. It's a UX optimisation for a pilot.
-- **Member data now lives in Descope** (four custom attributes), which is exactly what the MemberPortal
-  design exists to avoid. That's a policy decision, not a technical one.
+- **Member data lives in Descope** — four custom attributes per member, because that's where a JWT
+  Template reads from. Whether an identity provider is an acceptable home for plan and subscriber
+  identifiers is a policy decision, not a technical one, and it should be settled before real member
+  records go in.
 
 Both are covered properly in [`docs/architecture.md`](docs/architecture.md).

@@ -3,7 +3,7 @@
 **Status: deferred on purpose.** The plan is to design this *after* sign-in is proven working on a
 device. This file exists so that when that conversation starts, nobody has to re-derive the basics.
 
-Nothing here has been implemented or tested. There is no .NET code in this repo.
+Nothing here has been implemented or tested. There is no .NET code alongside this app.
 
 ## What the app will have to hand over
 
@@ -51,13 +51,15 @@ reason a JWT Template was chosen over a flow action. See `architecture.md`.
 
 ## Questions to settle when this is actually designed
 
-- **Does .NET consume Descope's token directly, or exchange it for its own?** MemberPortal's
-  architecture assumed the latter — a .NET-minted RS256 token carrying the enriched claims, with
-  Descope's token as a pure authentication artifact. This pilot puts the claims in Descope's token
-  directly, which makes the exchange optional rather than necessary. That's a genuine fork.
+- **Does .NET consume Descope's token directly, or exchange it for its own?** This pilot puts the claims
+  in Descope's token, so a service can read them straight off it. The alternative is treating Descope's
+  token as a pure authentication artifact and minting an enriched token of your own from it — more
+  moving parts, but it keeps member data out of the identity provider and lets you add claims without
+  touching Descope. That's a genuine fork, and it interacts with the next question.
+- **Whether member data should live in Descope at all.** A JWT Template reads user custom attributes, so
+  choosing it put `plan` and `subscriberId` in the identity provider. See "Known gaps" in
+  [`architecture.md`](architecture.md) — if that answer is no, the token design changes.
 - **What happens when claims change mid-session?** A plan change updates the Descope attribute, but the
   member's current session token still carries the old value until it refreshes.
-- **Whether member data should be in Descope at all** — the open question in `architecture.md` that
-  this pilot deliberately set aside.
 - Token lifetime and refresh behaviour for long-lived .NET sessions.
 - Whether downstream services validate Descope's token individually, or behind a gateway.

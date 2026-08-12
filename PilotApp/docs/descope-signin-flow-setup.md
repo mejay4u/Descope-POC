@@ -23,6 +23,7 @@ both. §8 is optional — skip it unless you're inviting testers by email.
 | §5 | `pilot-sign-in` flow | password, then OTP when the device isn't trusted |
 | §6 | `pilot-passkey-signin` + `pilot-passkey-add` | passkeys, in a browser rather than in-app |
 | §8 | `pilot-invite-accept` — **optional** | only if you're onboarding real testers by email invite |
+| §9 | A styles file | so the embedded flow looks like the app instead of Descope's default template |
 
 ## 1. Prerequisites
 
@@ -266,6 +267,74 @@ immediately afterwards.
 A deep link (`pilotapp://invite?...`) would need URL handling, a new screen, another approved redirect
 entry and another config value — and it buys nothing, because the tester has to install the app either
 way. Hosted web keeps this to console configuration.
+
+## 9. Making the flow look like the app
+
+Out of the box the flow renders Descope's default template — a dashed "Your logo here" placeholder, a
+generic blue button — which looks nothing like the app around it. Everything here fixes that.
+
+First, the thing styling can't change: **the flow is a web view.** `FlowView` is a `WKWebView` on iOS
+and a WebView on Android; that's what embedding a hosted flow means. Styling makes it look like your
+app. It doesn't make it native controls.
+
+Second, **this has to be done in the Console.** The native Descope SDK has a CSS-injection hook
+(`FlowHook.addStyles`), but it isn't exposed through the React Native bridge — `FlowOptions` has no
+`hooks` field — so there is no way to style the flow from app code.
+
+### 9a. Create a styles file
+
+**Styles** tab → dropdown → **+ New styles file**. It has two tabs: **Theme** for global settings and
+**Components** for per-component detail.
+
+Styles are **project-wide**. One file covers the sign-in flow, both passkey flows and the invite-accept
+flow, so this is done once, not per flow.
+
+### 9b. Logo
+
+**Styles → Theme → Logo.** Upload light and dark versions; SVG is preferred. This is what replaces the
+"Your logo here" placeholder, and it's set once for the whole project.
+
+### 9c. Colours — match the app's tokens
+
+The app's palette already exists in `src/theme/index.ts`. Enter the same values so the web content and
+the native chrome around it agree:
+
+| Console value | Token | Value |
+| --- | --- | --- |
+| Primary / brand | `colors.brand` | `#0F2A5C` |
+| Primary dark (hover/pressed) | `colors.brandDark` | `#0A1E42` |
+| Page background | `colors.bg` | `#FFFFFF` |
+| Input background | `colors.surface` | `#F8FAFC` |
+| Borders | `colors.border` | `#E2E8F0` |
+| Body text | `colors.text` | `#0F172A` |
+| Muted / helper text | `colors.textMuted` | `#64748B` |
+| Error text | `colors.danger` | `#DC2626` |
+
+Descope generates a full palette from the primary colour, so set that first and correct the rest only
+where the generated value looks wrong.
+
+### 9d. Component geometry
+
+Buttons, taken from `src/components/DefaultAppButton.tsx` — the app's own button, which appears
+directly below the flow on the sign-in screen, so a mismatch here is visible in a single glance:
+
+- height **52**
+- corner radius **12**
+- label **16px, weight 600**
+
+Inputs have no native counterpart to copy — the app has no text fields of its own, because the flow
+renders them all. Match them to the button so the screen is internally consistent: height **52**,
+corner radius **12**, border **1.5px** `#E2E8F0`, background `#F8FAFC`.
+
+### 9e. Remove the seam
+
+The web view is created **non-opaque with a transparent background**, so the app's own background shows
+through wherever the flow's page doesn't paint. Set the screen's background to white or transparent in
+the Screen Builder and the boundary between native and web disappears. Leave it grey and the flow reads
+as a card sitting on the app rather than as part of it.
+
+While you're in the Screen Builder, drop any default widgets you don't want — the "Last Used" badge on
+the sign-in screen, for instance.
 
 ## Done when
 

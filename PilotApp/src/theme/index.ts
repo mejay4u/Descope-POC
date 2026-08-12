@@ -1,5 +1,15 @@
 /**
  * Central design tokens for the Pilot App.
+ *
+ * ⚠️ These values exist in a second place: the **Descope Console styles file**,
+ * which themes the sign-in and passkey flows. Those flows render in a web view
+ * and cannot be styled from app code — the SDK's CSS hook isn't exposed through
+ * the React Native bridge — so the palette below has to be re-entered by hand in
+ * the Console. Change a colour here and the flow keeps the old one until someone
+ * updates it there too, which nobody notices until a screenshot looks wrong.
+ *
+ * The mapping, and where to enter it, is in
+ * docs/descope-signin-flow-setup.md §9.
  */
 export const colors = {
   brand: '#0F2A5C', // navy blue

@@ -302,6 +302,18 @@ outright, so check the message source or another mailbox before changing anythin
 **An invited user cannot sign in without §8.** Invite creates them passwordless, and this flow signs
 members in with a password. They will fail at step 2 with what looks like a wrong-password error.
 
+**The sign-in screen spins and never shows the flow.** The app waits 15 seconds for Descope to report
+the flow ready, then replaces the spinner with a diagnostic carrying the flow URL it tried. Open that
+URL in a browser — it's also logged to Metro on every launch:
+
+```
+https://api.descope.com/login/<PROJECT_ID>?platform=mobile&wide=true&flow=<SIGNIN_FLOW_ID>
+```
+
+If it renders the email/password screen, Descope is fine and the problem is in the app. If it 404s or
+comes back blank, then `SIGNIN_FLOW_ID` in `src/config/index.ts` doesn't match a flow in the Console,
+the Project ID is wrong, or the flow isn't published.
+
 **Claims appear on the *session* token, not the refresh token.** If you decode the wrong one they'll
 look absent.
 

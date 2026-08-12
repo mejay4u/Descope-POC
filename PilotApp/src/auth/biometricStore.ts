@@ -184,9 +184,18 @@ export function showBiometricUnavailableAlert(label: string, osMessage: string):
 /**
  * Which biometry the device supports, e.g. 'FaceID', 'TouchID', 'Fingerprint',
  * or null if none is enrolled/available.
+ *
+ * Never throws. The Keychain call can reject outright — simulators are the
+ * usual culprit — and a caller awaiting this alongside other work would have
+ * that whole effect torn down by the rejection. `null` already means "no
+ * biometry" to every caller, so failing that way costs nothing.
  */
 export async function getSupportedBiometry(): Promise<Keychain.BIOMETRY_TYPE | null> {
-  return Keychain.getSupportedBiometryType();
+  try {
+    return await Keychain.getSupportedBiometryType();
+  } catch {
+    return null;
+  }
 }
 
 /** Friendly label for the current device's biometry. */

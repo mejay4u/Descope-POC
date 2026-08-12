@@ -25,6 +25,13 @@ import type { AuthStackParamList } from '../navigation/types';
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignIn'>;
 
 /**
+ * How long to wait for the flow to report itself ready before assuming it
+ * never will. Generous — a cold hosted flow on a slow connection is not a
+ * failure — but bounded, because an unbounded wait is just a white screen.
+ */
+const FLOW_LOAD_TIMEOUT_MS = 15000;
+
+/**
  * Sign-in runs as a **Descope Flow**, embedded here with `FlowView`. The app
  * collects no credentials itself: the flow's own screens take the email and
  * password, decide whether an OTP is needed, and hand back a finished session.
@@ -49,6 +56,7 @@ export default function SignInScreen({ navigation }: Props) {
   const { finishSignIn, signInWithBiometrics } = useAuth();
   const flowUrl = useHostedFlowUrl(SIGNIN_FLOW_ID);
   const [ready, setReady] = useState(false);
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bioName, setBioName] = useState('Biometrics');
   const [bioBusy, setBioBusy] = useState(false);
@@ -61,17 +69,51 @@ export default function SignInScreen({ navigation }: Props) {
 
   useEffect(() => {
     (async () => {
-      const [supported, trusted] = await Promise.all([
-        getSupportedBiometry(),
-        // The flow renders its own email field, so at this point the app can't
-        // know *who* is about to sign in — only whether this handset has ever
-        // passed an OTP check. The per-member check happens after sign-in.
-        isAnyDeviceTrusted(),
-      ]);
-      setBioName(biometryLabel(supported));
-      setDeviceTrusted(trusted);
+      let trusted = false;
+      try {
+        const [supported, storedTrust] = await Promise.all([
+          getSupportedBiometry(),
+          // The flow renders its own email field, so at this point the app can't
+          // know *who* is about to sign in — only whether this handset has ever
+          // passed an OTP check. The per-member check happens after sign-in.
+          isAnyDeviceTrusted(),
+        ]);
+        setBioName(biometryLabel(supported));
+        trusted = storedTrust;
+      } catch {
+        // Keychain reads can reject. Whatever went wrong here has nothing to do
+        // with the flow, so it must not stop the flow mounting — an unhandled
+        // rejection would leave deviceTrusted undefined and the screen spinning
+        // forever. False is the safe settle: it takes the untrusted branch and
+        // asks for an OTP.
+      } finally {
+        setDeviceTrusted(trusted);
+      }
     })();
   }, []);
+
+  // A flow that never becomes ready would otherwise sit behind the opaque
+  // loading overlay indefinitely — a wrong flow ID, a wrong project ID, an
+  // unpublished flow and a dead network all look identical from here. Give up
+  // waiting and say so instead.
+  useEffect(() => {
+    // `error` is in here so that a flow which reported a real failure doesn't
+    // also collect the generic "didn't load" diagnostic 15 seconds later — the
+    // specific message Descope gave us is the better one to leave on screen.
+    if (deviceTrusted === undefined || ready || error) {
+      return;
+    }
+    const timer = setTimeout(() => setLoadTimedOut(true), FLOW_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [deviceTrusted, ready, error]);
+
+  useEffect(() => {
+    if (__DEV__) {
+      // Printed so the URL can be opened in a browser: if it renders there, the
+      // problem is in the app; if it 404s, it's the flow ID or the project ID.
+      console.log(`[PilotApp] sign-in flow URL: ${flowUrl}`);
+    }
+  }, [flowUrl]);
 
   const onBiometric = async () => {
     setError(null);
@@ -135,19 +177,42 @@ export default function SignInScreen({ navigation }: Props) {
               magicLinkRedirect: AUTH_REDIRECT_URL,
             }}
             style={styles.flow}
-            onReady={() => setReady(true)}
+            onReady={() => {
+              setReady(true);
+              setLoadTimedOut(false);
+            }}
             onSuccess={completed => {
               setError(null);
               // Applies the session, marks the device trusted and offers
               // biometric enrolment. RootNavigator then swaps to the Portal.
               finishSignIn(completed);
             }}
-            onError={e =>
-              setError(e.errorDescription || e.errorMessage || 'Sign-in could not be completed.')
-            }
+            onError={e => {
+              setLoadTimedOut(false);
+              setError(e.errorDescription || e.errorMessage || 'Sign-in could not be completed.');
+            }}
           />
         )}
-        {(!ready || deviceTrusted === undefined) && (
+        {loadTimedOut && !ready && !error ? (
+          // The flow never reported ready. Uncover it and say what to check —
+          // whatever it rendered (an error page, nothing at all) is more useful
+          // to see than a spinner that never stops.
+          <View style={styles.diagnostic}>
+            <Text style={styles.diagnosticTitle}>The sign-in flow didn’t load</Text>
+            <Text style={styles.bodyText}>
+              Descope didn’t report the flow ready. Usual causes: SIGNIN_FLOW_ID doesn’t
+              match a flow in the Console, the Project ID is wrong, the flow isn’t
+              published, or this device has no network.
+            </Text>
+            <Text style={styles.diagnosticUrl} selectable>
+              {flowUrl}
+            </Text>
+            <Text style={styles.bodyText}>
+              Open that URL in a browser: if it renders, the problem is in the app; if it
+              doesn’t, it’s the flow or the Project ID.
+            </Text>
+          </View>
+        ) : (!ready || deviceTrusted === undefined) && (
           <View style={styles.loading}>
             <ActivityIndicator size="large" color={colors.brand} />
           </View>
@@ -181,6 +246,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.bg,
+  },
+  diagnostic: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    left: 0,
+    padding: spacing.lg,
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  diagnosticTitle: {
+    ...typography.label,
+    fontSize: 16,
+    color: colors.danger,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  diagnosticUrl: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginVertical: spacing.md,
+    textAlign: 'center',
   },
   alt: {
     paddingHorizontal: spacing.lg,

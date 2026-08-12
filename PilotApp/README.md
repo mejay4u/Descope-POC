@@ -14,9 +14,9 @@ The session JWT carries four custom member claims — `memberId`, `plan`, `subsc
 there by a Descope **JWT Template**, so they survive a token refresh and appear on every path. The
 Portal screen renders them, which is how you can see at a glance that the setup worked.
 
-There is **no registration**: members are seeded by hand in the Descope Console. This is a pilot for the
-sign-in half only — see [`docs/architecture.md`](docs/architecture.md) for what that scope deliberately
-leaves out.
+There is **no self-service registration**: members are seeded by hand in the Descope Console, or invited
+by email and given a password through a separate accept flow. This is a pilot for the sign-in half only
+— see [`docs/architecture.md`](docs/architecture.md) for what that scope deliberately leaves out.
 
 ## Getting it running
 
@@ -24,7 +24,9 @@ leaves out.
 flow to run.
 
 1. **Build the Descope side**: follow [`docs/descope-signin-flow-setup.md`](docs/descope-signin-flow-setup.md)
-   end to end, including its §7 test. That guide is self-contained and needs no code.
+   end to end, including its §7 test. That guide is self-contained and needs no code. §7 also creates
+   the member you'll sign in as — create them **directly with a password**, and don't use the invite
+   option, which produces a passwordless user this app can't authenticate.
 2. **Configure the app** — edit `src/config/index.ts`:
    ```ts
    export const DESCOPE_PROJECT_ID = 'P2xxxxxxxxxxxxxxxxxx'; // yours

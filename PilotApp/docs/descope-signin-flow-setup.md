@@ -6,7 +6,7 @@ OTP on devices it doesn't trust, and issues a session JWT carrying four custom m
 **testable on its own** in the Console's flow runner, before the app is pointed at it.
 
 Work through it in order. §3 and §4 (the claims) are independent of §5 (the flow), but §7's test needs
-both.
+both. §8 is optional — skip it unless you're inviting testers by email.
 
 > **On labels:** the Console changes between releases. Where a label here doesn't match what you see,
 > the concept still holds — find the equivalent rather than assuming the step is wrong. `docs.descope.com`
@@ -22,6 +22,7 @@ both.
 | §4 | A JWT Template | what copies those values into every token |
 | §5 | `pilot-sign-in` flow | password, then OTP when the device isn't trusted |
 | §6 | `pilot-passkey-signin` + `pilot-passkey-add` | passkeys, in a browser rather than in-app |
+| §8 | `pilot-invite-accept` — **optional** | only if you're onboarding real testers by email invite |
 
 ## 1. Prerequisites
 
@@ -195,8 +196,15 @@ Both must end by redirecting back to **`pilotapp://auth`** with the session.
 Seed a member first — **Users → + User**:
 
 - login ID: your own email (you need to receive the OTP)
-- set a password
+- **set a password**
 - fill in all four custom attributes from §3
+- **leave the "invite user" / "send invitation" option switched off** — see the warning below
+
+> ⚠️ **Do not invite the user.** The invite toggle sits in this same dialog and is the wrong path here.
+> An invited user is created **without a password**, and §5 step 2 signs members in *with* a password —
+> so an invited member fails at the first step of the flow. Invites also depend on a Project Settings
+> value that is unset by default; see the gotcha below. If you want to onboard real testers by email,
+> that's §8, and it needs a second flow to give them a password first.
 
 Then run `pilot-sign-in` in the **Console's flow runner** and confirm:
 
@@ -211,14 +219,65 @@ Then run `pilot-sign-in` in the **Console's flow runner** and confirm:
 Step 5 is the one that proves §4. If the claims are missing, the template is either unassigned or its
 attribute references are misspelled; the flow itself is fine.
 
+## 8. Optional — onboarding real testers by invite
+
+**Skip this section for your own test user** (§7 covers that, faster). This is for handing a batch of
+pilot testers a link that gets them a working account.
+
+The problem to solve: Descope's invite creates a user with **no password**, and the sign-in flow needs
+one. So an invite has to land somewhere that lets the tester set a password before they ever open the
+app. That's one more flow and one Project Settings value — no app code.
+
+### 8a. The accept flow
+
+**Flows → + Flow**, blank, **unauthenticated**, ID `pilot-invite-accept`:
+
+1. **Verify the invite token** carried by the magic link the invite email sends.
+2. **Screen: set password + confirm.** Its validation must match the §2 password policy *exactly* — if
+   the two drift, a tester picks a password here and is rejected at sign-in, which reads as a broken
+   app rather than as a policy mismatch.
+3. **End the flow.**
+
+### 8b. Point invites at it
+
+**Project Settings → User Invitation Redirect URL** → the hosted URL of `pilot-invite-accept`.
+
+This value is **unset by default**, and unset is what produces an invite email whose link is missing
+entirely — the surrounding copy renders, the link doesn't. If you've already sent invites and testers
+report a blank email, this is why.
+
+### 8c. Invite the testers
+
+**Users → + User**, with the invite option **on** this time — and still set the four custom attributes
+from §3, or their tokens carry no claims. If the invite dialog doesn't expose custom attributes, set
+them by editing each user afterwards, or script it against the management API for a batch of any size.
+
+### What the tester experiences
+
+Invite email → link opens the accept flow in a browser → they set a password → they install the app and
+sign in normally.
+
+Their first sign-in in the app is on a device nothing has trusted yet, so it demands an OTP. That's
+correct, not a bug: it's the check that makes it safe to offer them passkey and biometric enrolment
+immediately afterwards.
+
+### Why the invite link goes to a web page, not into the app
+
+A deep link (`pilotapp://invite?...`) would need URL handling, a new screen, another approved redirect
+entry and another config value — and it buys nothing, because the tester has to install the app either
+way. Hosted web keeps this to console configuration.
+
 ## Done when
 
 - The Project ID is recorded, and in `src/config/index.ts`.
 - All three flow IDs are recorded (defaults: `pilot-sign-in`, `pilot-passkey-signin`,
   `pilot-passkey-add`).
 - `pilotapp://auth` is an approved redirect URL.
-- A seeded test member exists with all four attributes.
+- A seeded test member exists **with a password** and all four attributes — created directly, not
+  invited.
 - The flow runner completes end to end **and the decoded JWT carries the four claims**.
+
+§8 is optional and independent — nothing above depends on it.
 
 ## Gotchas
 
@@ -232,6 +291,16 @@ always takes the OTP path. Testing the skip requires the app — see the manual 
 
 **Don't use a "sign up or in" composite anywhere in this flow.** Steps 2 and 4 both call this out. It
 creates users on the way past, which turns a typo'd email into a real account.
+
+**An invite email arriving with no link means the User Invitation Redirect URL is unset.** The
+template renders its copy — *"click on the link below to start your journey"* — around a link slot that
+Descope fills from **Project Settings → User Invitation Redirect URL**. Empty setting, empty slot, and
+it reads like a broken email rather than a missing config value. See §8b. Worth ruling out one other
+cause first if your mail is corporate: gateways that flag external senders sometimes strip links
+outright, so check the message source or another mailbox before changing anything.
+
+**An invited user cannot sign in without §8.** Invite creates them passwordless, and this flow signs
+members in with a password. They will fail at step 2 with what looks like a wrong-password error.
 
 **Claims appear on the *session* token, not the refresh token.** If you decode the wrong one they'll
 look absent.

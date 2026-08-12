@@ -7,7 +7,8 @@ There is no backend in the sign-in path. The app talks to Descope and to nothing
 
 ## Scope
 
-This pilot builds **sign-in only**. Members are seeded by hand in the Descope Console; there is no
+This pilot builds **sign-in only**. Members are created for them — seeded by hand in the Descope
+Console, or invited by email and given a password through an accept flow. There is no self-service
 registration, no account recovery, and no profile management. The question it exists to answer is
 narrow and practical:
 
@@ -117,8 +118,10 @@ rather than discovered later when a downstream service rejects a token.
 - **Sign-out deliberately keeps device trust.** Otherwise every sign-out would re-trigger the OTP, which
   defeats the point. Uninstalling the app clears it, since the Keychain entry is app-scoped.
 
-- **No registration, and no password reset.** Members are seeded by hand in the Console. Sign-up is out
-  of scope, and so is the question of who should own the password long term.
+- **No self-service registration, and no password reset.** Members are seeded by hand in the Console,
+  or invited by email and given a password through a separate accept flow (setup guide §8). Neither is
+  sign-up: both need someone to create the account first. Self-service registration is out of scope, and
+  so is the question of who should own the password long term.
 
 - **Token consumption by other services is not designed.** Deferred until sign-in is proven. What exists
   is a stub of the facts a consumer will need: [`dotnet-token-notes.md`](dotnet-token-notes.md).

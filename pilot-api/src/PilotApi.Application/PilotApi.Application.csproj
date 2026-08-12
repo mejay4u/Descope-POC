@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Application layer depends on Domain and nothing else. In particular it
+    has no reference to ASP.NET Core, which is why nothing in here can reach for
+    HttpContext or ClaimsPrincipal — the caller arrives as ICallerIdentity
+    instead. See Abstractions/ICallerIdentity.cs for why that matters.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>PilotApi.Application</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PilotApi.Domain\PilotApi.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

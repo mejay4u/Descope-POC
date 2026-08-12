@@ -1,0 +1,29 @@
+<Project>
+
+  <!--
+    Shared build settings for every project under pilot-api/.
+
+    TargetFramework lives here, in one place, on purpose. This sample targets
+    net8.0 because that is almost certainly what the real ID card API is on, and
+    because every API used below (JwtBearer, minimal APIs, WebApplicationFactory,
+    IValidateOptions) is unchanged from net8.0 through net10.0. If you move the
+    real API to net10.0, change the single line below and bump the package
+    versions in the .csproj files to 10.0.x — none of the authentication or
+    authorization code changes. Note that .NET 8 support ends in November 2026,
+    so treat that bump as scheduled work rather than optional.
+
+    TreatWarningsAsErrors is deliberately NOT set. This solution has never been
+    compiled (see README, "A caveat worth reading first"), and a warnings-as-
+    errors setting would turn a cosmetic analyzer warning into a failed first
+    build on your machine. Turn it on once it builds clean for you.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,13 @@
+## .NET build output. The MemberPortal app has its own .gitignore; this one
+## covers the pilot API so bin/obj never reach a commit.
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+
+## Local secrets. Descope:ProjectId is not a secret, but the management key used
+## by tools/get-test-token.sh is — keep both out of git regardless.
+appsettings.Local.json
+.env

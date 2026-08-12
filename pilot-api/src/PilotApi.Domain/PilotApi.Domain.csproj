@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Domain layer references nothing at all — no NuGet packages, no other
+    projects. That emptiness is the point: it is what stops business rules from
+    quietly acquiring a dependency on ASP.NET, on Descope, or on how the data
+    happens to be stored today.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>PilotApi.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

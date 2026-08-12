@@ -1,0 +1,27 @@
+### Pilot ID card API — manual requests
+###
+### Set @token to a Descope session JWT (see README, "Getting a JWT for testing",
+### or run tools/get-test-token.sh). Tokens live for minutes, not hours — if these
+### start returning 401 having worked earlier, get a new one before debugging.
+
+@host = http://localhost:5217
+@token = PASTE_A_DESCOPE_SESSION_JWT_HERE
+
+### 1. No token at all — expect 401 with a ProblemDetails body, not an empty one
+GET {{host}}/api/idcard/me
+
+### 2. The caller's own card — expect 200
+GET {{host}}/api/idcard/me
+Authorization: Bearer {{token}}
+
+### 3. The caller's own card by route id — expect 200
+GET {{host}}/api/idcard/member-alice
+Authorization: Bearer {{token}}
+
+### 4. Another member's card — expect 403, and this is the one that matters
+GET {{host}}/api/idcard/member-bob
+Authorization: Bearer {{token}}
+
+### 5. A garbled token — expect 401
+GET {{host}}/api/idcard/me
+Authorization: Bearer not.a.jwt

@@ -326,7 +326,31 @@ Inputs have no native counterpart to copy — the app has no text fields of its 
 renders them all. Match them to the button so the screen is internally consistent: height **52**,
 corner radius **12**, border **1.5px** `#E2E8F0`, background `#F8FAFC`.
 
-### 9e. Remove the seam
+### 9e. Make it fill the screen
+
+By default the screen's content sits in a **centred card** — a container with a max width, a white
+surface, rounded corners and a shadow — floating in the middle of the phone with wide empty margins.
+That's a sensible default for a login page that also has to render in a desktop browser. It's wrong
+when the page *is* the whole screen.
+
+This is the hosted page's own layout, not the app's. Worth knowing so you don't go looking in the wrong
+place: `SignInScreen`'s `flowWrap` and `flow` styles are bare `flex: 1` with no padding, and the native
+SDK sizes the web view to the full bounds of that view. The app already hands the flow the entire
+screen; the page chooses not to use it.
+
+Fix it in the Screen Builder, on the screen's root container:
+
+- Set the container to **Fill Container** so it stretches to its parent instead of hugging its content
+  at a fixed width.
+- Clear its **background, corner radius and shadow** — those three are what make it read as a card
+  sitting on the app rather than as the screen itself.
+- Check its padding. Some inset is wanted so the fields aren't flush to the bezel; the app's own
+  screens use 24pt, so that's the value to match.
+
+Do this on **every** screen in the flow, not just the first — the password screen and the OTP screen
+have their own containers and will otherwise stay as cards.
+
+### 9f. Remove the seam
 
 The web view is created **non-opaque with a transparent background**, so the app's own background shows
 through wherever the flow's page doesn't paint. Set the screen's background to white or transparent in

@@ -59,9 +59,9 @@ is the first real verification, in order:
 2. **The Portal shows all four claims** under "Token claims", with the values you seeded. This is what
    proves the JWT Template is assigned and correct. If it says *Missing*, go back to setup §4.
 3. **Sign out, sign in again with the password.** The OTP is **skipped** — the device is trusted now.
-4. **Accept the biometric prompt** when offered. Sign out. Sign in with Face ID / fingerprint.
-   **The four claims are still present.** This is the important one: it's the refresh path, and the
-   whole reason a JWT Template was chosen over a flow's Custom Claims action.
+4. **Accept the biometric prompt** when offered. Sign out. Sign in with Face ID / fingerprint **from
+   the Welcome screen**. **The four claims are still present.** This is the important one: it's the
+   refresh path, and the whole reason a JWT Template was chosen over a flow's Custom Claims action.
 5. **Add a passkey from the Portal.** Sign out. Sign in with the passkey from the Welcome screen.
    Claims still present.
 6. **Delete and reinstall the app.** The OTP is demanded again — the trusted-device record was

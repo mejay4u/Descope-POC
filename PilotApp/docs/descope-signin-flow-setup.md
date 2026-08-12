@@ -315,8 +315,10 @@ where the generated value looks wrong.
 
 ### 9d. Component geometry
 
-Buttons, taken from `src/components/DefaultAppButton.tsx` — the app's own button, which appears
-directly below the flow on the sign-in screen, so a mismatch here is visible in a single glance:
+Buttons, taken from `src/components/DefaultAppButton.tsx`. Nothing native shares the sign-in screen
+with the flow any more, so a mismatch isn't side by side — but the member reaches the flow one tap
+after the Welcome screen's buttons, and a jump in size or shape between the two reads as a different
+app:
 
 - height **52**
 - corner radius **12**

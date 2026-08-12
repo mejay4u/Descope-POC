@@ -3,15 +3,8 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { FlowView, useHostedFlowUrl } from '@descope/react-native-sdk';
-import AppButton from '../components/AppButton';
 import Banner from '../components/Banner';
-import FingerprintIcon from '../components/icons/FingerprintIcon';
 import { useAuth } from '../auth/useAuth';
-import {
-  biometryLabel,
-  getSupportedBiometry,
-  showBiometricUnavailableAlert,
-} from '../auth/biometricStore';
 import { isAnyDeviceTrusted } from '../auth/deviceTrust';
 import {
   AUTH_REDIRECT_URL,
@@ -48,18 +41,21 @@ const FLOW_LOAD_TIMEOUT_MS = 15000;
  * bridge, so there's no redirect URL involved. The passkey screen needs a
  * browser for an unrelated reason — see its header.
  *
- * Biometric sign-in is deliberately *outside* the flow. It's a local
- * `descope.refresh` against a Keychain-held token, so there is no flow to run
- * and no network round trip beyond the refresh itself.
+ * **This screen is deliberately nothing but the flow.** Biometric sign-in used
+ * to sit in a native bar below it, and that was wrong twice over: the app can't
+ * position a native control relative to content inside a web view, so the seam
+ * between the two was always visible; and `FlowView` reports no screen changes,
+ * so the button stayed on screen during the OTP step, offering biometric
+ * sign-in to someone halfway through entering a code. It lives on the Welcome
+ * screen now, alongside the other entry points, where it is native throughout
+ * and can't collide with the flow.
  */
 export default function SignInScreen({ navigation }: Props) {
-  const { finishSignIn, signInWithBiometrics } = useAuth();
+  const { finishSignIn } = useAuth();
   const flowUrl = useHostedFlowUrl(SIGNIN_FLOW_ID);
   const [ready, setReady] = useState(false);
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bioName, setBioName] = useState('Biometrics');
-  const [bioBusy, setBioBusy] = useState(false);
   /**
    * Undefined until read from the Keychain. The flow must not start before we
    * know this — starting with the wrong value would either demand an OTP the
@@ -71,15 +67,10 @@ export default function SignInScreen({ navigation }: Props) {
     (async () => {
       let trusted = false;
       try {
-        const [supported, storedTrust] = await Promise.all([
-          getSupportedBiometry(),
-          // The flow renders its own email field, so at this point the app can't
-          // know *who* is about to sign in — only whether this handset has ever
-          // passed an OTP check. The per-member check happens after sign-in.
-          isAnyDeviceTrusted(),
-        ]);
-        setBioName(biometryLabel(supported));
-        trusted = storedTrust;
+        // The flow renders its own email field, so at this point the app can't
+        // know *who* is about to sign in — only whether this handset has ever
+        // passed an OTP check. The per-member check happens after sign-in.
+        trusted = await isAnyDeviceTrusted();
       } catch {
         // Keychain reads can reject. Whatever went wrong here has nothing to do
         // with the flow, so it must not stop the flow mounting — an unhandled
@@ -114,27 +105,6 @@ export default function SignInScreen({ navigation }: Props) {
       console.log(`[PilotApp] sign-in flow URL: ${flowUrl}`);
     }
   }, [flowUrl]);
-
-  const onBiometric = async () => {
-    setError(null);
-    setBioBusy(true);
-    const result = await signInWithBiometrics();
-    setBioBusy(false);
-    if (result.ok) {
-      return; // RootNavigator swaps to the Portal on the session change.
-    }
-    if (result.osUnavailable) {
-      showBiometricUnavailableAlert(bioName, result.error);
-      return;
-    }
-    if (result.notEnrolled) {
-      setError(
-        `${bioName} sign-in isn’t set up yet. Sign in with your password once and you’ll be offered it.`,
-      );
-      return;
-    }
-    setError(result.error);
-  };
 
   if (!isSignInFlowConfigured()) {
     return (
@@ -218,16 +188,6 @@ export default function SignInScreen({ navigation }: Props) {
           </View>
         )}
       </View>
-
-      <View style={styles.alt}>
-        <AppButton
-          label={`Sign in with ${bioName}`}
-          variant="ghost"
-          icon={<FingerprintIcon size={18} color={colors.brand} />}
-          onPress={onBiometric}
-          loading={bioBusy}
-        />
-      </View>
     </SafeAreaView>
   );
 }
@@ -269,13 +229,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginVertical: spacing.md,
     textAlign: 'center',
-  },
-  alt: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
   },
   title: { ...typography.title, margin: spacing.lg, marginBottom: spacing.md },
   body: { flex: 1, justifyContent: 'center', paddingHorizontal: spacing.lg },

@@ -1,97 +1,127 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Pilot App
 
-# Getting Started
+A React Native member portal that does one thing: **sign in**, four ways, with Descope as the identity
+provider and no backend in the path.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+| Path | How |
+| --- | --- |
+| Email + password | a Descope flow, embedded in the app |
+| Emailed OTP | a step inside that flow, on devices we don't trust yet |
+| Passkey | a browser-hosted Descope flow (web passkey) |
+| Device biometrics | Face ID / Touch ID / fingerprint unlocking a stored refresh token |
 
-## Step 1: Start Metro
+The session JWT carries four custom member claims — `memberId`, `plan`, `subscriberId`, `lobs` — put
+there by a Descope **JWT Template**, so they survive a token refresh and appear on every path. The
+Portal screen renders them, which is how you can see at a glance that the setup worked.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+There is **no registration**: members are seeded by hand in the Descope Console. This is a pilot for the
+sign-in half only.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+> This app sits alongside `MemberPortal/` in the same repo and is built on the **opposite credential
+> model** — here Descope holds the password. [`docs/architecture.md`](docs/architecture.md) explains
+> why, and what that trades away.
 
-```sh
-# Using npm
-npm start
+## Getting it running
 
-# OR using Yarn
-yarn start
+**Order matters — do the Console work first.** The app can't do anything without a project ID and a
+flow to run.
+
+1. **Build the Descope side**: follow [`docs/descope-signin-flow-setup.md`](docs/descope-signin-flow-setup.md)
+   end to end, including its §7 test. That guide is self-contained and needs no code.
+2. **Configure the app** — edit `src/config/index.ts`:
+   ```ts
+   export const DESCOPE_PROJECT_ID = 'P2xxxxxxxxxxxxxxxxxx'; // yours
+   ```
+   The three flow IDs already default to the names the guide uses (`pilot-sign-in`,
+   `pilot-passkey-signin`, `pilot-passkey-add`). Change them only if you named yours differently.
+3. **Install and run:**
+   ```sh
+   npm install
+   cd ios && pod install && cd ..   # macOS only
+   npm run ios                      # or: npm run android
+   ```
+
+Requires Node ≥ 22.11 and the standard React Native environment.
+
+### Test on a real device
+
+The Simulator will get you through password + OTP, but not the rest:
+
+- **Passkey creation is unreliable on the iOS Simulator** regardless of configuration.
+- **Face ID on the Simulator** needs Features → Face ID → Enrolled, and it never exercises the real
+  Keychain access-control behaviour.
+
+## Manual test checklist
+
+Nothing below has been run — the app was built in a Linux container where iOS can't be compiled. This
+is the first real verification, in order:
+
+1. **Fresh install → password sign-in.** The OTP is demanded. Sign-in completes.
+2. **The Portal shows all four claims** under "Token claims", with the values you seeded. This is what
+   proves the JWT Template is assigned and correct. If it says *Missing*, go back to setup §4.
+3. **Sign out, sign in again with the password.** The OTP is **skipped** — the device is trusted now.
+4. **Accept the biometric prompt** when offered. Sign out. Sign in with Face ID / fingerprint.
+   **The four claims are still present.** This is the important one: it's the refresh path, and the
+   whole reason a JWT Template was chosen over a flow's Custom Claims action.
+5. **Add a passkey from the Portal.** Sign out. Sign in with the passkey from the Welcome screen.
+   Claims still present.
+6. **Delete and reinstall the app.** The OTP is demanded again — the trusted-device record was
+   app-scoped and went with it.
+
+Also worth checking: an unknown email **fails** rather than creating an account (setup §5 step 2
+explains why that's a real risk), and a wrong password fails.
+
+## How it's built
+
+```
+src/
+  config/index.ts        project ID, flow IDs, redirect scheme
+  screens/
+    WelcomeScreen        entry point — password or passkey
+    SignInScreen         hosts the embedded sign-in flow (FlowView)
+    PasskeyScreen        browser-hosted passkey flow, sign-in and add modes
+    PortalScreen         signed-in view; renders the decoded claims
+  auth/
+    claims.ts            decodes the session JWT (hand-rolled base64url — RN has no atob)
+    deviceTrust.ts       the trusted-device flag that gates the OTP
+    biometricStore.ts    Keychain-held refresh token behind an OS prompt
+    useAuth.ts           applies sessions, biometric sign-in, sign-out
+    passkeyStore.ts      local "passkey added" hint for the Portal
+    coldStart.ts         forces sign-in after the app is killed
+    InactivityGate.tsx   auto sign-out after 5 minutes idle
+  services/
+    descopeService.ts    the only direct Descope SDK calls: refresh and logout
 ```
 
-## Step 2: Build and run your app
+Password and OTP are **not** SDK calls — they're steps inside the embedded flow, which hands back a
+finished session. That's why `descopeService.ts` is nearly empty.
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### Checks
 
 ```sh
-bundle install
+npx tsc --noEmit    # types
+npm run lint        # eslint
+npm test            # jest — covers the JWT claim decoding
 ```
 
-Then, and every time you update your native dependencies, run:
+All three pass. They cover the decoding logic and nothing about the auth flows themselves, which only
+exist on a device.
 
-```sh
-bundle exec pod install
-```
+## Docs
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+| | |
+| --- | --- |
+| [`docs/descope-signin-flow-setup.md`](docs/descope-signin-flow-setup.md) | **Start here.** Building the flows and the JWT Template in the Console |
+| [`docs/architecture.md`](docs/architecture.md) | The decisions, what they trade away, and the known gaps |
+| [`docs/dotnet-token-notes.md`](docs/dotnet-token-notes.md) | Stub: what a .NET consumer will need. Deliberately not designed yet |
 
-```sh
-# Using npm
-npm run ios
+## Known gaps
 
-# OR using Yarn
-yarn ios
-```
+The two worth knowing before you demo this:
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+- **The trusted-device flag is client-supplied and is not a security boundary.** A modified build can
+  skip the OTP. It's a UX optimisation for a pilot.
+- **Member data now lives in Descope** (four custom attributes), which is exactly what the MemberPortal
+  design exists to avoid. That's a policy decision, not a technical one.
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+Both are covered properly in [`docs/architecture.md`](docs/architecture.md).

@@ -29,8 +29,10 @@ import * as Keychain from 'react-native-keychain';
 const SERVICE = 'com.pilotapp.deviceTrust';
 
 /**
- * Keyed by login ID: trusting a device for one member must not silently trust
- * it for the next person who signs in on the same handset.
+ * The stored entry records *who* trusted this device. Only one entry exists per
+ * Keychain service, so a second member signing in overwrites the first — which
+ * is the behaviour we want, but see the caveat on `isAnyDeviceTrusted` about
+ * what the app can actually check at flow-start time.
  */
 function accountFor(loginId: string): string {
   return `trusted:${loginId.trim().toLowerCase() || 'unknown'}`;
@@ -49,46 +51,23 @@ export async function markDeviceTrusted(loginId: string): Promise<void> {
 }
 
 /**
- * Whether this device is already trusted for `loginId`.
- *
- * Only one entry is kept per service, so this answers "is the trusted device
- * record the one belonging to this member?" — a different member on the same
- * device reads back false and gets the OTP, which is the behaviour we want.
- */
-export async function isDeviceTrusted(loginId: string): Promise<boolean> {
-  if (!loginId) {
-    return false;
-  }
-  try {
-    const creds = await Keychain.getGenericPassword({ service: SERVICE });
-    return !!creds && creds.username === accountFor(loginId);
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Whether *any* member has trusted this device.
  *
- * The sign-in flow is a Descope-rendered screen, so the app doesn't know the
- * login ID until after the member types it — by which point the client input
- * has already been handed to the flow. This is what the app can honestly answer
- * at flow-start time. The per-login-ID check above is the stricter one, used
- * once we do know who signed in.
+ * ⚠️ Note what this can't do. The sign-in flow renders its own email field, so
+ * when the app mounts the flow it doesn't yet know who is signing in — and the
+ * client input has to be supplied at that moment. So this is the honest answer
+ * to the only question the app can ask that early: "has this handset ever
+ * passed an OTP check?"
+ *
+ * On a shared device that means member B can skip the OTP because member A
+ * trusted the handset. Fixing it means asking for the email on a native screen
+ * before starting the flow, which trades away the single-flow design. Recorded
+ * in docs/architecture.md.
  */
 export async function isAnyDeviceTrusted(): Promise<boolean> {
   try {
     return !!(await Keychain.hasGenericPassword({ service: SERVICE }));
   } catch {
     return false;
-  }
-}
-
-/** Forget the trusted-device record (sign-out of the last member, or a reset). */
-export async function clearDeviceTrust(): Promise<void> {
-  try {
-    await Keychain.resetGenericPassword({ service: SERVICE });
-  } catch {
-    // Non-fatal.
   }
 }

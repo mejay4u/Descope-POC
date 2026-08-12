@@ -64,18 +64,6 @@ export function useAuth() {
     [manageSession],
   );
 
-  /** Applies a verified session's side effects: activates it and offers biometrics. */
-  const applySession = useCallback(
-    async (result: VerifyResult): Promise<AuthResult> => {
-      if (!result.ok) {
-        return result;
-      }
-      await finishSignIn(result.jwt);
-      return { ok: true };
-    },
-    [finishSignIn],
-  );
-
   /** Sign in using the biometric-protected refresh token. */
   const signInWithBiometrics = useCallback(async (): Promise<BiometricSignInResult> => {
     try {
@@ -150,7 +138,6 @@ export function useAuth() {
 
   return {
     finishSignIn,
-    applySession,
     signInWithBiometrics,
     signOut,
   };

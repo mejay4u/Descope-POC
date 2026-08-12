@@ -1,0 +1,101 @@
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSession } from '@descope/react-native-sdk';
+import { isColdStartPending, markColdStartHandled } from '../auth/coldStart';
+import WelcomeScreen from '../screens/WelcomeScreen';
+import SignInScreen from '../screens/SignInScreen';
+import PasskeyScreen from '../screens/PasskeyScreen';
+import PortalScreen from '../screens/PortalScreen';
+import { colors } from '../theme';
+import type { AppStackParamList, AuthStackParamList } from './types';
+
+const AuthStack = createNativeStackNavigator<AuthStackParamList>();
+const AppStack = createNativeStackNavigator<AppStackParamList>();
+
+function AuthNavigator() {
+  return (
+    <AuthStack.Navigator
+      screenOptions={{ headerShadowVisible: false, headerTintColor: colors.brand }}>
+      <AuthStack.Screen
+        name="Welcome"
+        component={WelcomeScreen}
+        options={{ headerShown: false }}
+      />
+      {/* The flow renders its own screens inside the view, so the native
+          header is what lets the member back out of it. */}
+      <AuthStack.Screen
+        name="SignIn"
+        component={SignInScreen}
+        options={{ title: '', headerBackTitle: 'Back' }}
+      />
+      <AuthStack.Screen
+        name="Passkey"
+        component={PasskeyScreen}
+        options={{ title: '', headerBackTitle: 'Back' }}
+      />
+    </AuthStack.Navigator>
+  );
+}
+
+function AppNavigator() {
+  return (
+    <AppStack.Navigator>
+      <AppStack.Screen
+        name="Portal"
+        component={PortalScreen}
+        options={{ title: 'Pilot App', headerShadowVisible: false }}
+      />
+      <AppStack.Screen
+        name="Passkey"
+        component={PasskeyScreen}
+        options={{ title: 'Add a passkey', headerBackTitle: 'Back' }}
+      />
+    </AppStack.Navigator>
+  );
+}
+
+export default function RootNavigator() {
+  // The AuthProvider loads any persisted session on launch. While that happens
+  // we show a splash spinner, then route to the portal or the auth flow.
+  const { session, isSessionLoading, clearSession } = useSession();
+  // On a cold start (app was killed and reopened) we don't silently restore the
+  // session into the Portal — clear it so the member signs in again. The
+  // biometric token lives in a separate Keychain entry, so Face ID sign-in
+  // still works, and the trusted-device record survives too, so no OTP.
+  const [handlingColdStart, setHandlingColdStart] = useState(isColdStartPending());
+
+  useEffect(() => {
+    if (isSessionLoading || !isColdStartPending()) {
+      return;
+    }
+    markColdStartHandled();
+    if (session) {
+      clearSession().finally(() => setHandlingColdStart(false));
+    } else {
+      setHandlingColdStart(false);
+    }
+  }, [isSessionLoading, session, clearSession]);
+
+  if (isSessionLoading || handlingColdStart) {
+    return (
+      <View style={styles.splash}>
+        <ActivityIndicator size="large" color={colors.brand} />
+      </View>
+    );
+  }
+
+  return (
+    <NavigationContainer>{session ? <AppNavigator /> : <AuthNavigator />}</NavigationContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
+});

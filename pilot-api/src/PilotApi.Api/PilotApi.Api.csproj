@@ -18,13 +18,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.30" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PilotApi.Application\PilotApi.Application.csproj" />
     <ProjectReference Include="..\PilotApi.Infrastructure\PilotApi.Infrastructure.csproj" />
+    <!-- A ProjectReference rather than a PackageReference on purpose: in this repo it
+         means the pilot's tests exercise the package's own code, which is the cheapest
+         possible proof the package works. Consuming services use a PackageReference from
+         Nexus instead. -->
+    <ProjectReference Include="..\..\..\packages\MemberPortal.Authentication.Descope\MemberPortal.Authentication.Descope.csproj" />
   </ItemGroup>
 
   <ItemGroup>

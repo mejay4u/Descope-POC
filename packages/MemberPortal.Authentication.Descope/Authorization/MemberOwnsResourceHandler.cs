@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
-using PilotApi.Application.Abstractions;
+using Microsoft.AspNetCore.Http;
 
-namespace PilotApi.Api.Authorization;
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Grants <see cref="MemberOwnsResourceRequirement"/> when the token's subject
@@ -40,7 +40,7 @@ namespace PilotApi.Api.Authorization;
 /// to do different things about them.
 /// </para>
 /// </remarks>
-public sealed class MemberOwnsResourceHandler : AuthorizationHandler<MemberOwnsResourceRequirement>
+internal sealed class MemberOwnsResourceHandler : AuthorizationHandler<MemberOwnsResourceRequirement>
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ICallerIdentity _caller;

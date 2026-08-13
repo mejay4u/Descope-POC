@@ -1,69 +1,10 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using PilotApi.Application.Abstractions;
 
-namespace PilotApi.Api.Authentication;
-
-/// <summary>
-/// Wires Descope session-token validation onto the API. <b>This is the file to
-/// copy into the real ID card API.</b>
-/// </summary>
-/// <remarks>
-/// <para>
-/// There is no Descope SDK here and none is needed. Descope publishes a standard
-/// OIDC discovery document and JWKS endpoint per project, so the framework's own
-/// JWT bearer handler validates its tokens — including fetching, caching and
-/// rotating the signing keys. An SDK would add a vendor dependency to the request
-/// path of every call and would still be doing exactly this underneath.
-/// </para>
-/// <para>
-/// Every value that identifies Descope lives in configuration
-/// (<see cref="DescopeAuthenticationOptions"/>). That is not tidiness — it is the
-/// migration path. docs/architecture.md has the .NET side eventually minting its
-/// own enriched RS256 token that downstream services validate. When that lands,
-/// pointing this API at it is a change of <c>BaseUrl</c>/<c>ProjectId</c> in
-/// appsettings, or a second call to <see cref="AddDescopeJwtBearer"/> with a
-/// different scheme name — not a rewrite of the validation logic.
-/// </para>
-/// </remarks>
-public static class DescopeAuthenticationExtensions
-{
-    /// <summary>
-    /// Registers the JWT bearer scheme that validates Descope session tokens, plus
-    /// the caller abstraction the application layer reads identity through.
-    /// </summary>
-    public static IServiceCollection AddDescopeJwtBearer(
-        this IServiceCollection services,
-        IConfiguration configuration)
-    {
-        services
-            .AddOptions<DescopeAuthenticationOptions>()
-            .Bind(configuration.GetSection(DescopeAuthenticationOptions.SectionName))
-            // ValidateOnStart is what makes a missing project id a failed startup
-            // instead of an API that returns 401 to every member. See the validator.
-            .ValidateOnStart();
-
-        services.AddSingleton<IValidateOptions<DescopeAuthenticationOptions>,
-            DescopeAuthenticationOptionsValidator>();
-
-        // The JwtBearerOptions are configured from DescopeAuthenticationOptions
-        // through IConfigureNamedOptions rather than inline here, so the validated
-        // options object is the single source of truth and configuration is read
-        // once, lazily, after validation has run.
-        services.AddSingleton<IConfigureOptions<JwtBearerOptions>,
-            ConfigureDescopeJwtBearerOptions>();
-
-        services
-            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer();
-
-        services.AddHttpContextAccessor();
-        services.AddScoped<ICallerIdentity, CallerIdentity>();
-
-        return services;
-    }
-}
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Projects <see cref="DescopeAuthenticationOptions"/> onto the framework's
@@ -71,7 +12,7 @@ public static class DescopeAuthenticationExtensions
 /// </summary>
 /// <remarks>
 /// A named-options configurator rather than an inline lambda in
-/// <see cref="DescopeAuthenticationExtensions.AddDescopeJwtBearer"/>, so that the
+/// <c>AddDescopeJwtBearer</c>, so that the
 /// validated options object is the single source of truth and configuration is
 /// read lazily — after ValidateOnStart has had its say — rather than at
 /// registration time.

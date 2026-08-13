@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.TestHost;
-using PilotApi.Application.Abstractions;
+using MemberPortal.Authentication.Descope;
 using Xunit;
 
 namespace PilotApi.Api.Tests;

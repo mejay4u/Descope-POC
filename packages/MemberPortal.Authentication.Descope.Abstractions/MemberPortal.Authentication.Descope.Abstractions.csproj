@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Interfaces only, and deliberately zero dependencies — no ASP.NET Core, no Descope,
+    nothing.
+
+    It is a separate package from MemberPortal.Authentication.Descope for one reason:
+    an application or domain layer wants to depend on ICallerIdentity, and if that
+    interface shipped in the main package then referencing it would drag the whole
+    ASP.NET Core framework reference into a layer that is not supposed to know HTTP
+    exists. Splitting costs one extra `dotnet pack` and keeps that boundary real.
+  -->
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <PackageId>MemberPortal.Authentication.Descope.Abstractions</PackageId>
+    <RootNamespace>MemberPortal.Authentication.Descope</RootNamespace>
+    <Description>
+      Interfaces for consuming a validated Descope caller identity from an application
+      layer, without taking a dependency on ASP.NET Core.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

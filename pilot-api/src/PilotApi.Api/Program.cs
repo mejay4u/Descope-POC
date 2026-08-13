@@ -1,6 +1,4 @@
 using PilotApi.Api;
-using PilotApi.Api.Authentication;
-using PilotApi.Api.Authorization;
 using PilotApi.Api.Endpoints;
 using PilotApi.Infrastructure;
 

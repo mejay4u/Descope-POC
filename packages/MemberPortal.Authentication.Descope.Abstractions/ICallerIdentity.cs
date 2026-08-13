@@ -1,4 +1,4 @@
-namespace PilotApi.Application.Abstractions;
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Who is making the current request, expressed without any reference to HTTP.
@@ -9,7 +9,7 @@ namespace PilotApi.Application.Abstractions;
 /// <c>ClaimsPrincipal</c> or <c>IHttpContextAccessor</c> would drag ASP.NET —
 /// and, one refactor later, Descope-shaped claim names — into business logic.
 /// This interface is the seam. The API layer implements it from the validated
-/// token (see PilotApi.Api/Authentication/CallerIdentity.cs); a test implements
+/// token (see CallerIdentity.cs in this package); a test implements
 /// it with two literal strings.
 /// </para>
 /// <para>

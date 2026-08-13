@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using MemberPortal.Authentication.Descope;
 using PilotApi.Application.Abstractions;
 using PilotApi.Application.IdCards;
 using PilotApi.Infrastructure.Identity;

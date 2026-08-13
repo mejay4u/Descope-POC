@@ -1,7 +1,7 @@
 using System.Security.Claims;
-using PilotApi.Application.Abstractions;
+using Microsoft.AspNetCore.Http;
 
-namespace PilotApi.Api.Authentication;
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Reads the caller out of the validated token on the current request.

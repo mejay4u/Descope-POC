@@ -1,7 +1,7 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using PilotApi.Application.Abstractions;
 
-namespace PilotApi.Api.Authorization;
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Fails startup when the ownership policy is registered without an
@@ -10,7 +10,7 @@ namespace PilotApi.Api.Authorization;
 /// <remarks>
 /// <para>
 /// A hosted service rather than a check inside
-/// <see cref="AuthorizationPolicies.AddDescopeMemberOwnership"/>, because that method
+/// <c>AddDescopeMemberOwnership()</c>, because that method
 /// may legitimately be called before the resolver is registered — service registration
 /// order is not something a shared package gets to dictate. By the time hosted services
 /// start, the container is complete.
@@ -37,9 +37,9 @@ internal sealed class MemberIdentityResolverPresenceCheck : IHostedService
         if (scope.ServiceProvider.GetService<IMemberIdentityResolver>() is null)
         {
             throw new InvalidOperationException(
-                $"{nameof(AuthorizationPolicies.AddDescopeMemberOwnership)} was called but no " +
+                "AddDescopeMemberOwnership() was called but no " +
                 $"{nameof(IMemberIdentityResolver)} is registered, so the " +
-                $"'{AuthorizationPolicies.MemberOwnsResource}' policy could never be satisfied and " +
+                $"'{DescopePolicies.MemberOwnsResource}' policy could never be satisfied and " +
                 "every request to a protected endpoint would return 403. Register an " +
                 $"{nameof(IMemberIdentityResolver)} that maps a Descope 'sub' to a member id.");
         }

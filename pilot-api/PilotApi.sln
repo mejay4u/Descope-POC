@@ -12,6 +12,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PilotApi.Api", "src\PilotAp
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PilotApi.Api.Tests", "tests\PilotApi.Api.Tests\PilotApi.Api.Tests.csproj", "{3169AD32-C24B-471F-970B-2EBBCB351328}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MemberPortal.Authentication.Descope.Abstractions", "..\packages\MemberPortal.Authentication.Descope.Abstractions\MemberPortal.Authentication.Descope.Abstractions.csproj", "{14CCCA30-9309-4B3E-AC1F-7A0C4FF38F16}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MemberPortal.Authentication.Descope", "..\packages\MemberPortal.Authentication.Descope\MemberPortal.Authentication.Descope.csproj", "{BF31F960-4B39-4582-BF5F-EF48264687C6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,6 +42,14 @@ Global
 		{3169AD32-C24B-471F-970B-2EBBCB351328}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3169AD32-C24B-471F-970B-2EBBCB351328}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3169AD32-C24B-471F-970B-2EBBCB351328}.Release|Any CPU.Build.0 = Release|Any CPU
+		{14CCCA30-9309-4B3E-AC1F-7A0C4FF38F16}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{14CCCA30-9309-4B3E-AC1F-7A0C4FF38F16}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{14CCCA30-9309-4B3E-AC1F-7A0C4FF38F16}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{14CCCA30-9309-4B3E-AC1F-7A0C4FF38F16}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BF31F960-4B39-4582-BF5F-EF48264687C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BF31F960-4B39-4582-BF5F-EF48264687C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BF31F960-4B39-4582-BF5F-EF48264687C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BF31F960-4B39-4582-BF5F-EF48264687C6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

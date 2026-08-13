@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Descope session-token validation for ASP.NET Core services.
+
+    FrameworkReference rather than a pile of PackageReferences: a library consumed by
+    web applications takes the shared framework, which keeps its transitive graph empty
+    and stops it dictating patch versions of ASP.NET to a dozen services.
+
+    Microsoft.AspNetCore.Authentication.JwtBearer is the exception — it genuinely is a
+    NuGet package rather than part of the shared framework — and it is pinned per target
+    framework so consumers on .NET 8 and .NET 10 each get the matching one.
+  -->
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <PackageId>MemberPortal.Authentication.Descope</PackageId>
+    <RootNamespace>MemberPortal.Authentication.Descope</RootNamespace>
+    <Description>
+      Validates Descope session tokens in an ASP.NET Core service: JWKS-backed signature
+      validation with pinned issuers and algorithms, fail-fast configuration validation,
+      ProblemDetails on 401 and 403, an opt-in member-ownership policy for front doors,
+      and opt-in member-token forwarding for outbound HttpClient calls.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MemberPortal.Authentication.Descope.Abstractions\MemberPortal.Authentication.Descope.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.30" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
+  </ItemGroup>
+
+</Project>

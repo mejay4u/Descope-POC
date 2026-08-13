@@ -1,9 +1,11 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
-namespace PilotApi.Api.Authentication;
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Turns the JWT handler's 401 and 403 responses into ProblemDetails bodies.

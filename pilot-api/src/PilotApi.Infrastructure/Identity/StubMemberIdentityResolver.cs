@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Options;
-using PilotApi.Application.Abstractions;
+using MemberPortal.Authentication.Descope;
 
 namespace PilotApi.Infrastructure.Identity;
 

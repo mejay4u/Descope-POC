@@ -13,6 +13,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PilotApi.Domain\PilotApi.Domain.csproj" />
+    <!-- Abstractions only: ICallerIdentity and IMemberIdentityResolver, with no ASP.NET
+         Core dependency. Referencing the full MemberPortal.Authentication.Descope package
+         here would drag the web framework into a layer that is not supposed to know HTTP
+         exists, which is precisely why that package is split in two. -->
+    <ProjectReference Include="..\..\..\packages\MemberPortal.Authentication.Descope.Abstractions\MemberPortal.Authentication.Descope.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

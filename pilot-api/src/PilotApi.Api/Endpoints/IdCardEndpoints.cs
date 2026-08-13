@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
-using PilotApi.Api.Authorization;
+using MemberPortal.Authentication.Descope;
 using PilotApi.Application.IdCards;
 
 namespace PilotApi.Api.Endpoints;
@@ -22,7 +22,7 @@ namespace PilotApi.Api.Endpoints;
 /// and it needs the ownership policy to be safe. It is included precisely because
 /// telling you to rewrite every route in the real API is not useful advice. If
 /// you copy one line from this file, copy the
-/// <c>.RequireAuthorization(AuthorizationPolicies.MemberOwnsResource)</c> on it.
+/// <c>.RequireAuthorization(DescopePolicies.MemberOwnsResource)</c> on it.
 /// </para>
 /// <para>
 /// A missing card returns 404 with a ProblemDetails body. Note that the 404 here
@@ -58,8 +58,8 @@ public static class IdCardEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group
-            .MapGet($"/{{{AuthorizationPolicies.MemberIdRouteValue}}}", GetIdCardByMemberIdAsync)
-            .RequireAuthorization(AuthorizationPolicies.MemberOwnsResource)
+            .MapGet($"/{{{DescopePolicies.MemberIdRouteValue}}}", GetIdCardByMemberIdAsync)
+            .RequireAuthorization(DescopePolicies.MemberOwnsResource)
             .WithName("GetIdCardByMemberId")
             .WithSummary("Returns a specific member's ID card, if it is the caller's own.")
             .WithDescription(

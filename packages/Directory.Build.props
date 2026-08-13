@@ -1,0 +1,40 @@
+<Project>
+
+  <!--
+    Shared settings for the packages published to Nexus.
+
+    Deliberately separate from pilot-api/Directory.Build.props: the pilot is a sample
+    that targets one framework, while these are libraries consumed by a dozen services
+    that will not all be on the same one. TargetFrameworks is set per project rather
+    than here so the abstractions package can stay narrower than the main one if it
+    ever needs to.
+  -->
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- The XML comments are the documentation ten teams will read in IntelliSense.
+         Shipping the package without them would throw away most of its value. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- CS1591 (missing XML comment on a public member) is suppressed: the types that
+         matter are documented at length, and the warning would otherwise fire on every
+         constructor and drown the ones worth reading. -->
+    <NoWarn>$(NoWarn);1591</NoWarn>
+
+    <Authors>MemberPortal</Authors>
+    <Company>MemberPortal</Company>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>descope;jwt;authentication;authorization;aspnetcore</PackageTags>
+
+    <!-- Version is overridden by CI: dotnet pack -p:Version=x.y.z -->
+    <Version>0.1.0</Version>
+
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+</Project>

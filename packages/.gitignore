@@ -1,0 +1,5 @@
+## Build and packaging output for the shared packages.
+bin/
+obj/
+*.nupkg
+*.snupkg

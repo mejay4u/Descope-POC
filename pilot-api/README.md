@@ -29,15 +29,18 @@ Treat the auth design as reviewed and the syntax as unverified.
 pilot-api/
 ├── src/
 │   ├── PilotApi.Domain/           the IdCard record. References nothing.
-│   ├── PilotApi.Application/      handler, DTO, and the interfaces the API depends on
+│   ├── PilotApi.Application/      handler, DTO, the IIdCardRepository interface
 │   ├── PilotApi.Infrastructure/   in-memory stubs standing in for your data access
-│   └── PilotApi.Api/
-│       ├── Authentication/        ← the files to copy
-│       ├── Authorization/         ← the files to copy
-│       └── Endpoints/             two ID card routes
+│   └── PilotApi.Api/Endpoints/    two ID card routes
 ├── tests/PilotApi.Api.Tests/      xUnit; needs no Descope project and no network
 └── tools/get-test-token.sh        prints a real session JWT for manual testing
 ```
+
+**The authentication and authorization code is no longer in here.** It lives in
+[`../packages/MemberPortal.Authentication.Descope/`](../packages/MemberPortal.Authentication.Descope/),
+which is what your services reference from Nexus. This project consumes it by
+`ProjectReference`, so the tests below exercise the package's own code rather than a copy
+of it — which is the cheapest proof the package works.
 
 Layering is `Api → Infrastructure → Application → Domain`, with authentication
 confined entirely to `PilotApi.Api`. The application layer sees the caller through
@@ -299,46 +302,25 @@ opt-in for exactly this reason.
 
 ---
 
-## What to copy into the real API
+## What goes into your services
 
-Across a dozen services this should be a **NuGet package**, not a copy-paste. The values
-in it — accepted issuers, accepted algorithms, clock skew — are security decisions you
-will want to change in one place rather than find in eleven repos, having missed one.
-The contents:
+Not files — a **package reference**. The code lives in
+[`../packages/`](../packages/) and publishes to Nexus as two packages:
 
-1. **`src/PilotApi.Api/Authentication/`** — all five files. Drops in as-is:
-   `DescopeAuthenticationOptions`, its validator, `DescopeAuthenticationExtensions`
-   (the `AddDescopeJwtBearer` method), `ProblemDetailsAuthEvents`, `CallerIdentity`.
-2. **`src/PilotApi.Api/Authorization/`** — the requirement, handler, policy names and
-   the startup presence check. Consumed only by front doors.
-3. **`src/PilotApi.Application/Abstractions/`** — `ICallerIdentity` and
-   `IMemberIdentityResolver`, the two interfaces consumers implement.
-4. Per service: a `PackageReference`, the `Descope` config block (project id from Key
-   Vault or user-secrets), one line in `Program.cs`
-   (`builder.Services.AddDescopeJwtBearer(builder.Configuration);` plus
-   `UseAuthentication`/`UseAuthorization`), and `.RequireAuthorization()` on the
-   member-facing route groups.
-5. **The tests.** `PilotApiFactory` shows how to validate real tokens without a Descope
-   project: swap `JwtBearerOptions.ConfigurationManager` for a static one holding a test
-   key, and leave everything else — handler, validation parameters, events — exactly as
-   it runs in production.
+| Package | Referenced by |
+| --- | --- |
+| `MemberPortal.Authentication.Descope` | every web service accepting a member token — BFF and downstream alike |
+| `MemberPortal.Authentication.Descope.Abstractions` | application/domain layers that want `ICallerIdentity` without an ASP.NET dependency |
+
+Read [the package README](../packages/MemberPortal.Authentication.Descope/README.md) for
+the consumer snippets and the configuration reference. The short version: downstream
+services call `AddDescopeJwtBearer` and stop; front doors add
+`AddDescopeMemberOwnership`, an `IMemberIdentityResolver` of their own, and
+`AddMemberTokenForwarding()` on the typed clients calling downstream.
 
 **Do not copy** `PilotApi.Infrastructure` — the in-memory repository, the seeded cards
 and `StubMemberIdentityResolver` are scaffolding. The real `IMemberIdentityResolver`
-lives on the BFF, and it is blocked on the `DescopeUserId` gap above.
-
-### Packaging notes
-
-- **Multi-target** `net8.0;net10.0`. A dozen services will not all be on one framework,
-  and a single-target package makes the slowest repo set the pace.
-- **Do not bundle the fallback policy.** `RequireAuthenticatedUserByDefault()` is a
-  separate opt-in method because as a package default it lands in every repo at once and
-  401s every endpoint nobody remembered to mark anonymous.
-- **SemVer, with a twist**: treat *tightening* validation — trimming `ValidAlgorithms`,
-  requiring a new claim — as a **major** bump even though the API surface is unchanged.
-  The breakage is at runtime, in production, on somebody else's service.
-- Point consumers at your Nexus feed with a `nuget.config` per repo, credentials from CI
-  environment variables rather than a checked-in `<packageSourceCredentials>`.
+lives on the BFF and is blocked on the `DescopeUserId` gap above.
 
 ### Things that will differ in the real services
 

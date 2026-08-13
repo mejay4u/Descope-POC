@@ -1,4 +1,4 @@
-namespace PilotApi.Api.Authentication;
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Everything the API needs to know about Descope in order to validate a session
@@ -7,7 +7,7 @@ namespace PilotApi.Api.Authentication;
 /// <remarks>
 /// <para>
 /// The section name matches the one the registration API already uses
-/// (docs/dotnet-registration-api.md), so a service that talks to Descope for two
+/// (the MemberPortal registration API contract), so a service that talks to Descope for two
 /// reasons still has one place to look.
 /// </para>
 /// <para>

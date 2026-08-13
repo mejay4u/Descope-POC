@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 
-namespace PilotApi.Api.Authorization;
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Requires that the authenticated caller is the member identified by a route

@@ -1,3 +1,4 @@
+using MemberPortal.Authentication.Descope;
 using PilotApi.Application.Abstractions;
 
 namespace PilotApi.Application.IdCards;
@@ -26,7 +27,7 @@ namespace PilotApi.Application.IdCards;
 /// </list>
 /// <para>
 /// Note that this handler does not perform the ownership check itself. That is
-/// deliberate — see PilotApi.Api/Authorization/MemberOwnsResourceHandler.cs for
+/// deliberate — see MemberOwnsResourceHandler in MemberPortal.Authentication.Descope for
 /// why the check lives in a policy instead. A handler that both fetches data and
 /// decides authorization tends to end up with one of the two silently missing on
 /// the next endpoint someone adds.

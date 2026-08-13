@@ -1,4 +1,4 @@
-namespace PilotApi.Application.Abstractions;
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Translates a token subject (the Descope user id) into a member id in our own
@@ -17,7 +17,7 @@ namespace PilotApi.Application.Abstractions;
 /// inline dictionary lookup somewhere in an endpoint.
 /// </para>
 /// <para>
-/// Today that bridge does not exist in production data. Per docs/architecture.md,
+/// Today that bridge does not exist in production data. Per the MemberPortal architecture docs,
 /// the member record's <c>DescopeUserId</c> column is always null: the registration
 /// flow creates the Descope shadow record only after <c>initiateRegistration</c>
 /// returns, so there is no id to store at that moment. The only Descope-to-member

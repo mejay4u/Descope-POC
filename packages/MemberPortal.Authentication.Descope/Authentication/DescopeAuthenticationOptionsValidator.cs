@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace PilotApi.Api.Authentication;
+namespace MemberPortal.Authentication.Descope;
 
 /// <summary>
 /// Refuses to let the API start on an authentication configuration that cannot
@@ -10,14 +10,14 @@ namespace PilotApi.Api.Authentication;
 /// <para>
 /// This is the fail-fast rule the registration API already follows — "startup
 /// fails if neither a key nor the development escape hatch is set"
-/// (docs/dotnet-registration-api.md). The failure mode it prevents is nasty: a
+/// (the MemberPortal registration API contract). The failure mode it prevents is nasty: a
 /// missing project id does not produce an error at startup, it produces an API
 /// that boots happily, reports healthy, and returns 401 to every member. That
 /// gets diagnosed as "the app is broken" and can survive a deploy.
 /// </para>
 /// <para>
 /// The placeholder check matches the <c>YOUR_</c> convention the mobile app uses
-/// in MemberPortal/src/config/index.ts, and it checks the <i>prefix</i> rather
+/// in the MemberPortal app's config module, and it checks the <i>prefix</i> rather
 /// than the whole string for the same reason the app does: a find-and-replace
 /// that half-edits the value must not be able to slip past the guard.
 /// </para>

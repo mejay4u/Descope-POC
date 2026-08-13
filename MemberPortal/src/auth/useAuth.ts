@@ -33,10 +33,18 @@ export type { VerifyResult };
  *   - notEnrolled: biometrics works on the device but the user hasn't set up
  *     biometric sign-in in this app yet (no stored token) — point them at
  *     password sign-in, which offers enrollment on success.
+ *   - invalidated: the device's biometrics were re-enrolled, so the OS threw
+ *     away the stored token. This is the access control doing its job, not a
+ *     fault: tell the user plainly and send them to password sign-in to turn
+ *     biometrics back on.
+ *
+ * None of the three is a rejected scan, so none of them should count toward the
+ * Login screen's failed-attempt fallback.
  */
 export type BiometricSignInResult = AuthResult & {
   osUnavailable?: boolean;
   notEnrolled?: boolean;
+  invalidated?: boolean;
 };
 
 export function useAuth() {
@@ -102,10 +110,23 @@ export function useAuth() {
           notEnrolled: true,
         };
       }
-      const refreshJwt = await getBiometricRefreshToken();
-      if (!refreshJwt) {
+      // The OS prompt happens inside this read — see biometricStore.
+      const stored = await getBiometricRefreshToken();
+      if (stored.status === 'cancelled') {
         return { ok: false, error: 'Biometric sign-in was cancelled.' };
       }
+      if (stored.status === 'invalidated') {
+        // biometricStore has already cleared the dead item; all that is left is
+        // to explain it.
+        return {
+          ok: false,
+          error:
+            'Biometric sign-in was turned off because this device\u2019s biometrics ' +
+            'changed. Sign in with your password to set it up again.',
+          invalidated: true,
+        };
+      }
+      const refreshJwt = stored.refreshJwt;
       const result = await service.refreshWithToken(refreshJwt);
       if (!result.ok) {
         // Stored token no longer valid — clear it so the button hides.

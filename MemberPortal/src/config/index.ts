@@ -88,3 +88,22 @@ export function assertConfigured(): void {
     );
   }
 }
+
+/**
+ * DEV-ONLY escape hatch for biometric sign-in on the iOS Simulator.
+ *
+ * Biometric sign-in stores the Descope refresh token under Keychain access
+ * control (BIOMETRY_CURRENT_SET), so the OS itself refuses to release it
+ * without a matching scan. The Simulator does not enforce that — reads succeed
+ * with no Face ID sheet — which makes the flow impossible to exercise there.
+ *
+ * Turn this on LOCALLY to fall back to the older, weaker behaviour: the token
+ * stored without access control, gated by an app-level prompt. Every use is
+ * guarded by `__DEV__`, so a release build strips it even if this is committed
+ * as true — but commit it as false anyway, so the secure path is the one
+ * everybody exercises by default.
+ *
+ * See src/auth/biometricStore.ts for why the app-level gate is not good enough
+ * to ship.
+ */
+export const ALLOW_INSECURE_BIOMETRIC_STORAGE_IN_DEV = false;

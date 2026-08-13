@@ -31,7 +31,7 @@ the server-side contract is in
 | **Welcome screen** with *Sign In* / *Create Account* buttons | `src/screens/WelcomeScreen.tsx` |
 | **Login** — email + password, show/hide password, "Remember username", "Forgot password?" | `descope.password.signIn` / `descope.password.sendReset` (`src/screens/LoginScreen.tsx`) |
 | **Register** — a Descope Flow embedded in the app | `src/screens/RegisterScreen.tsx` hosts the flow with `FlowView` + `useHostedFlowUrl(REGISTER_FLOW_ID)`. Descope renders Personal Information → Verify Email → Create Account, and its engine calls `POST /api/initiateRegistration` and `POST /api/registration/password`. Only the final "You're all set!" screen stays native (`src/screens/register/SuccessStep.tsx`), so the biometric-enrollment prompt keeps happening in our UI |
-| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | Explicit OS biometric prompt (`react-native-biometrics`) gating a Keychain-stored refresh token (`react-native-keychain`), then `descope.refresh` + `descope.me`. The app **asks** before enabling it (never silently) after any successful sign-in. The Login screen always shows the biometric button so the feature is discoverable: if biometrics is disabled at the OS level a native alert shows the OS's own message (with an Open Settings shortcut); if it isn't set up in-app yet the user is pointed at password sign-in; after 5 failed scans the button hides for that visit and the user is asked to use their password. The Portal's enable/disable toggle is likewise always visible, disabled (with the OS message on tap) while OS-level biometrics is off. |
+| **Biometric sign-in** — Face ID / Touch ID / Fingerprint | A refresh token held under Keychain access control (`react-native-keychain`, `BIOMETRY_CURRENT_SET`) — the OS raises the prompt and releases the token only on a matching scan — then `descope.refresh` + `descope.me`. The app **asks** before enabling it (never silently) after any successful sign-in. The Login screen always shows the biometric button so the feature is discoverable: if biometrics is disabled at the OS level a native alert shows the OS's own message (with an Open Settings shortcut); if it isn't set up in-app yet the user is pointed at password sign-in; after 5 failed scans the button hides for that visit and the user is asked to use their password. The Portal's enable/disable toggle is likewise always visible, disabled (with the OS message on tap) while OS-level biometrics is off. |
 | **Passkey sign-in** — WebAuthn (Face ID / Touch ID / fingerprint / security key) | Runs a Descope **Flow** in a browser via `useFlow().start()` (`src/screens/PasskeyScreen.tsx`), making it a *web* passkey on Descope's domain, so **no iOS Associated Domains entitlement / hosted AASA is required**. Entry points: a "Sign in with a passkey" button on both the Welcome and Login screens (`mode: 'signin'`), and an "Add a passkey" action in the Portal (`mode: 'signup'`, runs authenticated). Gated on the two `PASSKEY_*_FLOW_ID`s in `src/config` — see "Passkeys setup" below. |
 | **Inactivity auto sign-out** | `src/auth/InactivityGate.tsx` — after a period with no interaction (default 5 min, incl. time backgrounded) the session is cleared. Because sign-out keeps the biometric-stored refresh token, the user returns to the Login screen and signs back in with Face ID / Touch ID / fingerprint. |
 | **Member portal / home** | `src/screens/PortalScreen.tsx` — profile, biometric toggle, add-a-passkey, sign out |
@@ -217,6 +217,10 @@ case a future feature needs it again:
 ### Biometrics
 - **iOS** — `NSFaceIDUsageDescription` is set in `Info.plist`.
 - **Android** — `USE_BIOMETRIC` / `USE_FINGERPRINT` permissions are in the manifest.
+- The stored refresh token uses `BIOMETRY_CURRENT_SET` access control; see
+  §5 and `src/auth/biometricStore.ts` for why the check must stay in the OS.
+  `__tests__/biometricStore.test.ts` pins that down — those tests fail if the
+  access control is dropped.
 
 ## 5. How each auth method flows
 
@@ -257,11 +261,28 @@ case a future feature needs it again:
   biometrics enabled only locks the app locally — the refresh token isn't
   revoked server-side, which is what lets biometrics unlock it again.
 
-  The prompt is app-level (LocalAuthentication / BiometricPrompt) rather than
-  Keychain access control, for two reasons: the iOS **Simulator doesn't
-  enforce Keychain biometric access control** (reads silently succeed with no
-  Face ID sheet), and combining both mechanisms would double-prompt on real
-  devices. The token stays encrypted at rest in the Keychain, device-only.
+  **The prompt is raised by the OS, not by the app.** The token is stored under
+  Keychain access control (`BIOMETRY_CURRENT_SET`), so the Secure Enclave / TEE
+  releases it only on a matching scan — there is no JavaScript boolean in front
+  of it that a rooted or repackaged device could hook. There is still only one
+  sheet: reading a protected item makes the OS present it.
+
+  `BIOMETRY_CURRENT_SET` also binds the token to the biometrics enrolled at the
+  time it was saved. Enrolling a new face or fingerprint invalidates it, the app
+  clears the dead item and explains why, and the member re-enables after one
+  password sign-in. Without that, anyone able to add their own fingerprint to an
+  unlocked device could sign in as the member indefinitely.
+
+  Two consequences worth knowing: **the device PIN/passcode is not accepted** as
+  an alternative at the prompt (the fallback is password sign-in — a
+  shoulder-surfed PIN should not unlock a health record), and Android uses RSA
+  keystore storage rather than AES-GCM because AES-GCM would demand a biometric
+  prompt to *encrypt*, and the token is re-saved after every ordinary sign-in.
+
+  The iOS **Simulator doesn't enforce Keychain access control**, so the flow
+  can't be exercised there. `ALLOW_INSECURE_BIOMETRIC_STORAGE_IN_DEV` in
+  `src/config/index.ts` falls back to the older app-level gate for local work;
+  it is guarded by `__DEV__` at every use, so release builds strip it.
 
 ### Troubleshooting: testing Face ID in the Simulator
 Enable it yourself: **Features → Face ID → Enrolled**, then approve the

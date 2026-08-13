@@ -135,6 +135,17 @@ export default function LoginScreen({ navigation }: Props) {
         );
         return;
       }
+      // The device's biometrics were re-enrolled, so the OS discarded the
+      // stored token — the access control working as intended, not a failure.
+      // Like the two cases above, no scan was rejected, so it must not count
+      // toward the attempt fallback.
+      if (res.invalidated) {
+        Alert.alert(
+          `${bioName} sign-in was turned off`,
+          `${bioName} on this device has changed since you set this up, so we turned off ${bioName} sign-in to keep your account safe. Sign in with your password to turn it back on.`,
+        );
+        return;
+      }
       const failures = bioFailures + 1;
       setBioFailures(failures);
       if (failures >= MAX_BIOMETRIC_ATTEMPTS) {

@@ -10,11 +10,10 @@ using PilotApi.Infrastructure;
 // A reference for one question: how does a .NET API accept only requests carrying
 // a valid Descope session token, and only serve each member their own ID card?
 //
-// The three lines that answer it are AddDescopeJwtBearer, AddPilotAuthorization,
-// and the RequireAuthorization on the route group in
-// Endpoints/IdCardEndpoints.cs. Everything else in this solution is scaffolding
-// so those three can be run and tested — see README.md for what to copy and what
-// to leave behind.
+// The lines that answer it are AddDescopeJwtBearer, AddDescopeMemberOwnership, and
+// the RequireAuthorization on the route group in Endpoints/IdCardEndpoints.cs.
+// Everything else in this solution is scaffolding so those can be run and tested —
+// see README.md for what to copy, where each half belongs, and what to leave behind.
 // -----------------------------------------------------------------------------
 
 var builder = WebApplication.CreateBuilder(args);
@@ -28,9 +27,19 @@ builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(OpenApiConfiguration.ConfigureSwaggerGen);
 
-// The two lines the real ID card API needs.
+// Authentication. Every HTTP service gets this one, downstream services included.
 builder.Services.AddDescopeJwtBearer(builder.Configuration);
-builder.Services.AddPilotAuthorization();
+
+// Ownership. FRONT DOORS ONLY — in the real topology this belongs on the BFF, which
+// resolves the Descope subject to a member once and answers "is this member allowed to
+// see this record". Downstream services deliberately do not take it: putting a member
+// lookup in every one of them is the coupling the enriched token exists to remove. It
+// is here because the sample is both halves in one process.
+builder.Services.AddDescopeMemberOwnership();
+
+// Opt-in, and a breaking change for an existing service — see the method's remarks
+// before adding it to one that already has anonymous endpoints.
+builder.Services.RequireAuthenticatedUserByDefault();
 
 // Stub data and the Descope-user-to-member mapping. Replaced wholesale in the
 // real API by its existing data access.

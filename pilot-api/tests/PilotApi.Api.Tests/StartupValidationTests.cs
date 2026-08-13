@@ -2,6 +2,10 @@ using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.AspNetCore.TestHost;
+using PilotApi.Application.Abstractions;
 using Xunit;
 
 namespace PilotApi.Api.Tests;
@@ -61,6 +65,34 @@ public sealed class StartupValidationTests
         var exception = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
 
         Assert.Contains("HS256", Flatten(exception), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Host_refuses_to_start_when_ownership_is_registered_without_a_resolver()
+    {
+        // The failure this prevents is silent: a policy whose handler cannot resolve
+        // its dependency denies every request, and "everything returns 403" gets
+        // diagnosed as a broken token long before anyone suspects DI.
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Descope:ProjectId"] = PilotApiFactory.ProjectId,
+                    });
+                });
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<IMemberIdentityResolver>();
+                });
+            });
+
+        var exception = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+
+        Assert.Contains(nameof(IMemberIdentityResolver), Flatten(exception), StringComparison.Ordinal);
     }
 
     private static string Flatten(Exception exception)

@@ -244,59 +244,126 @@ Decisions worth knowing before you copy them:
 
 ---
 
+## Where each half goes across the services
+
+The sample runs authentication and ownership in one process. In the real topology they
+belong in different places, and getting that wrong is the difference between a clean
+rollout and a member-database lookup in every service.
+
+| Service | Takes | Does not take |
+| --- | --- | --- |
+| **BFF** (front door) | `AddDescopeJwtBearer()` + `AddDescopeMemberOwnership()` + a real `IMemberIdentityResolver` | — |
+| **Downstream services** (`memberidcard`, and the rest) | `AddDescopeJwtBearer()` only | ownership policy, member lookup |
+| **BFA / auth service** | `AddDescopeJwtBearer()` on its member-facing routes | ownership; and see the connector-key warning below |
+| Workers and jobs with no HTTP surface | nothing | — |
+
+Downstream services still validate the signature, issuer, algorithm and lifetime for
+themselves — that is not delegated. What they delegate to the BFF is only the question
+"is this member allowed to see *this* record".
+
+**The risk that comes with that, stated plainly:** any caller that can reach a
+downstream service directly with any valid member token can read any member's data. It
+is acceptable only while those services are unreachable from outside the cluster, and
+what closes it is the enriched token below, not a network rule.
+
+### How the BFF calls downstream
+
+It **forwards the member's token** — the same `Authorization: Bearer <token>` it
+received. Downstream services then validate it with the same `AddDescopeJwtBearer`, and
+nothing about the token needs translating. A `DelegatingHandler` on the typed client
+does it:
+
+```csharp
+services.AddHttpClient<IIdCardClient, IdCardClient>()
+        .AddHttpMessageHandler<ForwardMemberTokenHandler>();
+```
+
+Three rules for that handler:
+
+- **Allowlist it, never make it global.** Register it per typed client, only on clients
+  calling our own services. A blanket handler is how a member token ends up on a request
+  to a third-party API.
+- **Redact `Authorization` in request logging** — the same rule the registration API
+  already applies to passwords.
+- **Nothing asynchronous may carry it.** Descope session tokens live minutes. Work
+  queued during a request and run later needs a service credential — a Descope access
+  key, whose token validates against this same JWKS — not a copied member token.
+
+### The trap on the auth service
+
+`POST /api/initiateRegistration` and `POST /api/registration/password` are called by
+Descope's flow engine with `X-Connector-Key` and **no member token at all**
+(`docs/dotnet-registration-api.md`). `RequireAuthenticatedUserByDefault()` would 401
+them and break registration entirely. Same for health probes and metrics. That method is
+opt-in for exactly this reason.
+
+---
+
 ## What to copy into the real API
+
+Across a dozen services this should be a **NuGet package**, not a copy-paste. The values
+in it — accepted issuers, accepted algorithms, clock skew — are security decisions you
+will want to change in one place rather than find in eleven repos, having missed one.
+The contents:
 
 1. **`src/PilotApi.Api/Authentication/`** — all five files. Drops in as-is:
    `DescopeAuthenticationOptions`, its validator, `DescopeAuthenticationExtensions`
    (the `AddDescopeJwtBearer` method), `ProblemDetailsAuthEvents`, `CallerIdentity`.
-2. **`src/PilotApi.Api/Authorization/`** — the requirement, the handler, the policy
-   names.
-3. **Two lines in `Program.cs`:**
-   ```csharp
-   builder.Services.AddDescopeJwtBearer(builder.Configuration);
-   builder.Services.AddPilotAuthorization();
-   ```
-   plus `.RequireAuthorization(...)` on your ID card route group.
-4. **The `Descope` block** in `appsettings.json`, with the project id supplied by
-   user-secrets locally and Key Vault in deployed environments.
-5. **The tests**, pointed at your real endpoint. `PilotApiFactory` shows how to
-   validate real tokens without a Descope project: swap
-   `JwtBearerOptions.ConfigurationManager` for a static one holding a test key, and
-   leave everything else — handler, validation parameters, events — exactly as it
-   runs in production.
+2. **`src/PilotApi.Api/Authorization/`** — the requirement, handler, policy names and
+   the startup presence check. Consumed only by front doors.
+3. **`src/PilotApi.Application/Abstractions/`** — `ICallerIdentity` and
+   `IMemberIdentityResolver`, the two interfaces consumers implement.
+4. Per service: a `PackageReference`, the `Descope` config block (project id from Key
+   Vault or user-secrets), one line in `Program.cs`
+   (`builder.Services.AddDescopeJwtBearer(builder.Configuration);` plus
+   `UseAuthentication`/`UseAuthorization`), and `.RequireAuthorization()` on the
+   member-facing route groups.
+5. **The tests.** `PilotApiFactory` shows how to validate real tokens without a Descope
+   project: swap `JwtBearerOptions.ConfigurationManager` for a static one holding a test
+   key, and leave everything else — handler, validation parameters, events — exactly as
+   it runs in production.
 
-**Do not copy** `PilotApi.Infrastructure` — the in-memory repository, the seeded
-cards, and `StubMemberIdentityResolver` are scaffolding. The real
-`IMemberIdentityResolver` is the piece you have to write, and it is blocked on the
-`DescopeUserId` gap above.
+**Do not copy** `PilotApi.Infrastructure` — the in-memory repository, the seeded cards
+and `StubMemberIdentityResolver` are scaffolding. The real `IMemberIdentityResolver`
+lives on the BFF, and it is blocked on the `DescopeUserId` gap above.
 
-### Things that will differ in the real API
+### Packaging notes
 
-- You will likely already have an authentication scheme registered. Register this
-  one under a **named scheme** and put both in a policy scheme, rather than
-  replacing what is there.
-- Your ID card route may take a member id in a different route value name — pass
-  it to `MemberOwnsResourceRequirement`, which takes the name as a constructor
-  argument for exactly this reason.
-- `AuthorizationPolicies.AddPilotAuthorization` sets a `FallbackPolicy` requiring
-  an authenticated user on every endpoint. That is the right default for a new
-  service and a **breaking change** for an existing one — check for anonymous
-  endpoints (health checks, the Descope registration connectors, which authenticate
-  with `X-Connector-Key` and carry no member token) before you turn it on.
+- **Multi-target** `net8.0;net10.0`. A dozen services will not all be on one framework,
+  and a single-target package makes the slowest repo set the pace.
+- **Do not bundle the fallback policy.** `RequireAuthenticatedUserByDefault()` is a
+  separate opt-in method because as a package default it lands in every repo at once and
+  401s every endpoint nobody remembered to mark anonymous.
+- **SemVer, with a twist**: treat *tightening* validation — trimming `ValidAlgorithms`,
+  requiring a new claim — as a **major** bump even though the API surface is unchanged.
+  The breakage is at runtime, in production, on somebody else's service.
+- Point consumers at your Nexus feed with a `nuget.config` per repo, credentials from CI
+  environment variables rather than a checked-in `<packageSourceCredentials>`.
 
----
+### Things that will differ in the real services
 
-## Later: switching to the enriched token
+- Most will already have an authentication scheme registered. Register this one under a
+  **named scheme** and combine them in a policy scheme, rather than replacing what is
+  there.
+- Route values differ. `MemberOwnsResourceRequirement` takes the route value name as a
+  constructor argument for exactly that reason.
 
-`docs/architecture.md` has the .NET side eventually minting its own RS256 token
-carrying LOBs, plan ids and subscriber, with downstream services validating ours
-rather than Descope's. Nothing in this sample blocks that. When it lands, either:
+## Later: the enriched token, and why it stops being optional
 
-- point `Descope:BaseUrl` / `Descope:ProjectId` at the issuer of the enriched
-  token, if it is the only token the ID card API should accept; or
-- call `AddDescopeJwtBearer` a second time under a different scheme name and
-  combine the two in a policy scheme, which is the real migration path — ship on
-  Descope tokens, cut over without redeploying the ID card API.
+`docs/architecture.md` has the auth service (the BFA) minting its own RS256 token
+carrying LOBs, plan ids and subscriber — something it already does for password sign-in
+— with downstream services validating ours rather than Descope's.
+
+With one service that is a nice-to-have. With a dozen it is the fix for the compromise
+above. Today ownership sits only at the front door because the alternative is a member
+lookup in every service. An enriched token carrying the **member id as a claim** removes
+the lookup, so each service can re-acquire the ownership check by reading a claim — the
+defence in depth you gave up, without the coupling that made you give it up.
+
+The migration, when it lands: the BFF exchanges the Descope token at the BFA and forwards
+the enriched one; each service either points `Descope:BaseUrl` / `Descope:ProjectId` at
+the new issuer, or registers a second scheme and combines the two in a policy scheme so
+both tokens work during the cutover.
 
 The validation logic does not change either way. That is the whole reason every
 Descope-specific value lives in configuration rather than in code.

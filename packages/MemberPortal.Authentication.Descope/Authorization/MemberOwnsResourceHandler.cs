@@ -22,7 +22,7 @@ namespace MemberPortal.Authentication.Descope;
 /// <b>It fails closed.</b> Every path that cannot establish ownership simply
 /// returns without calling <see cref="AuthorizationHandlerContext.Succeed"/>,
 /// which denies. There is deliberately no
-/// <see cref="AuthorizationHandlerContext.Fail"/> call and no early "allow if we
+/// <see cref="AuthorizationHandlerContext.Fail()"/> call and no early "allow if we
 /// cannot tell" branch: a handler that grants when it is confused is worse than
 /// no handler, because the endpoint now looks protected.
 /// </para>

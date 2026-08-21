@@ -13,10 +13,12 @@ namespace MemberPortal.Authentication.Descope;
 /// it with two literal strings.
 /// </para>
 /// <para>
-/// It exposes the raw token subject and nothing else on purpose. Anything richer
-/// — "the current member", "the current plan" — is a lookup, and lookups belong
-/// behind <see cref="IMemberIdentityResolver"/> where they can fail visibly
-/// rather than in a property getter where they cannot.
+/// The line it draws is between <b>what the token asserts</b> and <b>what has to be
+/// looked up</b>. Claims the identity provider signed into the token are readable
+/// here, because reading them cannot fail and cannot be wrong. Anything that needs
+/// a query to answer — "which member row is this", "is this plan still active" —
+/// belongs behind <see cref="IMemberIdentityResolver"/>, where it can fail visibly
+/// rather than in a property getter where it cannot.
 /// </para>
 /// </remarks>
 public interface ICallerIdentity
@@ -29,4 +31,20 @@ public interface ICallerIdentity
     /// user id. Null when the request is anonymous.
     /// </summary>
     string? SubjectId { get; }
+
+    /// <summary>
+    /// The subscriber id asserted by the token, or null if the token carries none.
+    /// </summary>
+    /// <remarks>
+    /// This is the value a request body is cross-checked against — see
+    /// <see cref="IMemberScopedRequest"/>. It is the token's claim, never the
+    /// client's: the whole point of the comparison is that one of the two is not
+    /// to be trusted.
+    /// </remarks>
+    string? SubscriberId { get; }
+
+    /// <summary>
+    /// The plan information asserted by the token, or null if the token carries none.
+    /// </summary>
+    string? PlanInformation { get; }
 }

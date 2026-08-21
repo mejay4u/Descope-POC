@@ -1,10 +1,17 @@
 # MemberPortal.Authentication.Descope.Abstractions
 
-Two interfaces, no dependencies.
+Three interfaces, no dependencies.
 
-- **`ICallerIdentity`** — who is making the current request (`SubjectId`, `IsAuthenticated`),
-  with no reference to `HttpContext` or `ClaimsPrincipal`.
+- **`ICallerIdentity`** — who is making the current request (`SubjectId`, `SubscriberId`,
+  `PlanInformation`, `IsAuthenticated`), with no reference to `HttpContext` or
+  `ClaimsPrincipal`.
+- **`IMemberScopedRequest`** — a request body that names the member context it expects to
+  act in, so the service can refuse a body that contradicts the token.
 - **`IMemberIdentityResolver`** — turns a Descope `sub` into a member id in your system.
+
+The line between the first and the last is worth keeping: `ICallerIdentity` reads what the
+token **asserts**, which cannot fail; `IMemberIdentityResolver` performs a **lookup**,
+which can. Claims go on the former, queries behind the latter.
 
 Reference this from an application or domain layer that wants to know who is calling
 without taking a dependency on ASP.NET Core. Web projects should reference

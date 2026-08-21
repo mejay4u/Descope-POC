@@ -52,6 +52,43 @@ public static class DescopeAuthorizationExtensions
     }
 
     /// <summary>
+    /// Registers the claims/payload cross-check. <b>Any service that reads member
+    /// context out of a request body</b> — front doors and downstream services alike.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Unlike <see cref="AddDescopeMemberOwnership"/> this needs no member database and
+    /// no resolver: it compares two values that both arrived with the request, so it is
+    /// safe to turn on anywhere. A downstream service that trusts the BFF to have
+    /// checked is trusting a hop it cannot see, which is the assumption the zero-trust
+    /// step exists to remove.
+    /// </para>
+    /// <para>
+    /// Registering the policy does not apply it. The endpoint asks for it once it has
+    /// the deserialised body — see <see cref="ClaimsMatchPayloadRequirement"/> for the
+    /// two lines that does, and why it cannot be attached to the route instead.
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddDescopeClaimsPayloadCheck(this IServiceCollection services)
+    {
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy(DescopePolicies.ClaimsMatchPayload, policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.AddRequirements(new ClaimsMatchPayloadRequirement());
+            });
+        });
+
+        // Scoped because ICallerIdentity is: it reads the principal off the current
+        // HttpContext, and a singleton holding it would answer every request with
+        // whoever happened to arrive first.
+        services.AddScoped<IAuthorizationHandler, ClaimsMatchPayloadHandler>();
+
+        return services;
+    }
+
+    /// <summary>
     /// Requires an authenticated user on every endpoint that does not opt out with
     /// <c>AllowAnonymous</c>. Opt-in, and a breaking change for an existing service.
     /// </summary>

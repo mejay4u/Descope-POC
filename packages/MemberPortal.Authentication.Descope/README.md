@@ -47,12 +47,84 @@ app.MapGet("/api/idcard/{memberId}", ...)
 Prefer routes that take the member from the token instead (`/api/idcard/me`) wherever you
 can — then cross-member access is unrepresentable rather than merely prevented.
 
+## Request bodies that name a member — the IDOR check
+
+Token validation cannot catch this one, and neither can the gateway. A signed-in member
+sends a token that is genuinely theirs, alongside a body naming **someone else's**
+subscriber. Signature, issuer, audience and expiry all pass; the tampering is in the
+payload, which nothing upstream looks at.
+
+The contradiction is only visible where both halves sit together — the service that
+deserialised the body and holds the validated principal. Register the check:
+
+```csharp
+builder.Services.AddDescopeClaimsPayloadCheck();
+```
+
+have the request model say which values are member-scoped:
+
+```csharp
+public sealed record MemberInfoRequest(string? SubscriberId, string? PlanInformation)
+    : IMemberScopedRequest;
+```
+
+and ask for it in the endpoint, once the body exists:
+
+```csharp
+var check = await authorization.AuthorizeAsync(
+    httpContext.User, request, DescopePolicies.ClaimsMatchPayload);
+
+if (!check.Succeeded)
+{
+    return DescopeAuthorizationResults.ClaimsMismatch();
+}
+```
+
+It has to be requested by the endpoint rather than attached to the route: authorization
+middleware runs **before model binding**, so a route-attached policy would be evaluated
+while the body is still an unread stream.
+
+Unlike `AddDescopeMemberOwnership()` this needs no member database and no resolver — it
+compares two values that both arrived with the request — so it is safe in **downstream
+services as well as front doors**. A downstream service that assumes the BFF already
+checked is trusting a hop it cannot see.
+
+### Why it answers 401 and not 403
+
+By the letter of HTTP this is a 403: the caller authenticated fine and simply is not
+permitted. It is a **401** because of what each status makes the client do. A 401 makes
+the mobile app purge its session and return to sign-in; a 403 makes it show an error and
+carry on. A body contradicting the token means the app's own state is wrong about who it
+is, and carrying on with that state is the thing worth preventing.
+
+`AddDescopeMemberOwnership()` stays a **403** for the same reason inverted: asking for
+another member's ID card by route is an ordinary refusal, the session is fine, and
+signing the member out over it would be wrong. The two look alike and want opposite
+client behaviour.
+
+### What it will and will not refuse
+
+| Body value | Token claim | Result |
+| --- | --- | --- |
+| absent | anything | **passes** — nothing to contradict; read the value from the claim |
+| supplied | matches | passes |
+| supplied | differs | refused |
+| supplied | **absent** | refused — a token asserting nothing cannot vouch for anything |
+
+That last row is usually a JWT template that was never updated to project the claim. The
+check refuses rather than waving every request through, which is the loud failure.
+
+Claim names are matched case-insensitively across `SubscriberID` / `subscriberId` /
+`subscriber_id` and `PlanInformation` / `planInformation` / `plan`, because the spelling
+is decided in the Descope JWT template rather than here.
+
 ## What each method does, and where it belongs
 
 | Method | Who calls it |
 | --- | --- |
 | `AddDescopeJwtBearer(configuration)` | every service accepting a member token |
 | `AddDescopeMemberOwnership()` | **front doors only** — needs an `IMemberIdentityResolver` |
+| `AddDescopeClaimsPayloadCheck()` | any service reading member context from a request body |
 | `AddMemberTokenForwarding()` | front doors, per typed client calling our own services |
 | `RequireAuthenticatedUserByDefault()` | opt-in; read the warning below first |
 
@@ -102,6 +174,29 @@ Decisions behind the defaults — worth reading once before you change any of th
 - **Startup fails on bad config.** A missing project id otherwise produces a service that
   boots, reports healthy, and returns 401 to everyone — triaged as a broken client, and
   it survives a deploy.
+
+### Once the project issues a custom issuer and audience
+
+A JWT template that sets `iss` and `aud` — a custom auth domain and a named audience —
+changes two settings here:
+
+```jsonc
+"Descope": {
+  "BaseUrl": "https://auth-prod.ahc.com",
+  "ValidateAudience": true,
+  "ValidAudiences": [ "AHC" ]
+}
+```
+
+`BaseUrl` feeds both the discovery address and the accepted issuers, which become the
+bare project id and `https://auth-prod.ahc.com/{projectId}`.
+
+⚠️ **Check what your template actually puts in `iss` before deploying this.** The
+accepted issuers are derived, so a template setting a bare `auth-prod.ahc.com` — no
+project-id path — matches neither form, and every token is rejected with a 401 that
+looks exactly like an expired session. Decode a real token and compare its `iss` against
+`{BaseUrl}/{ProjectId}`. If they differ, the issuer list needs to become directly
+configurable; it is derived today.
 
 ## Versioning
 

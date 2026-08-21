@@ -19,4 +19,15 @@ public static class DescopePolicies
 
     /// <summary>Route value the ownership policy compares the caller's member id against.</summary>
     public const string MemberIdRouteValue = "memberId";
+
+    /// <summary>
+    /// Requires that the member context in the request body matches the member context
+    /// in the token. Registered by <c>AddDescopeClaimsPayloadCheck()</c>.
+    /// </summary>
+    /// <remarks>
+    /// Evaluated against the deserialised body, so it is requested by the endpoint
+    /// through <c>IAuthorizationService</c> rather than attached to a route — see
+    /// <see cref="ClaimsMatchPayloadRequirement"/> for why it cannot be the latter.
+    /// </remarks>
+    public const string ClaimsMatchPayload = "ClaimsMatchPayload";
 }

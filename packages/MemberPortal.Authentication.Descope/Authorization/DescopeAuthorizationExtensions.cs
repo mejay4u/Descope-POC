@@ -52,16 +52,26 @@ public static class DescopeAuthorizationExtensions
     }
 
     /// <summary>
-    /// Registers the claims/payload cross-check. <b>Any service that reads member
-    /// context out of a request body</b> — front doors and downstream services alike.
+    /// Registers the claims/payload cross-check, for a service that receives member
+    /// context in a request body. <b>No service does today</b> — see the remarks.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Unlike <see cref="AddDescopeMemberOwnership"/> this needs no member database and
-    /// no resolver: it compares two values that both arrived with the request, so it is
-    /// safe to turn on anywhere. A downstream service that trusts the BFF to have
-    /// checked is trusting a hop it cannot see, which is the assumption the zero-trust
-    /// step exists to remove.
+    /// In the current design member context never travels in a body. Clients send only
+    /// the token; the BFF reads the claims and generates the downstream request from
+    /// them, forwarding the token so the downstream service can validate it for itself.
+    /// Nothing therefore has two copies of the member context to compare, and calling
+    /// this method changes nothing about how any existing endpoint behaves.
+    /// </para>
+    /// <para>
+    /// It is here for the endpoint that does eventually accept a subscriber or plan in
+    /// a payload. At that point body and token can disagree while signature, issuer,
+    /// audience and expiry all pass, and this is the only check that notices.
+    /// </para>
+    /// <para>
+    /// Unlike <see cref="AddDescopeMemberOwnership"/> it needs no member database and
+    /// no resolver — it compares two values that both arrived with the request — so it
+    /// is safe in a downstream service as well as a front door.
     /// </para>
     /// <para>
     /// Registering the policy does not apply it. The endpoint asks for it once it has

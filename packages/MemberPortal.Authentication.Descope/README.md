@@ -47,21 +47,32 @@ app.MapGet("/api/idcard/{memberId}", ...)
 Prefer routes that take the member from the token instead (`/api/idcard/me`) wherever you
 can — then cross-member access is unrepresentable rather than merely prevented.
 
-## Request bodies that name a member — the IDOR check
+## Request bodies that name a member
 
-Token validation cannot catch this one, and neither can the gateway. A signed-in member
-sends a token that is genuinely theirs, alongside a body naming **someone else's**
-subscriber. Signature, issuer, audience and expiry all pass; the tampering is in the
-payload, which nothing upstream looks at.
+**Nothing in the current design needs this**, and it is worth saying why before the
+API below tempts anyone into wiring it up.
 
-The contradiction is only visible where both halves sit together — the service that
-deserialised the body and holds the validated principal. Register the check:
+Member context never travels in a request body. Clients send only the token. The BFF
+reads the claims off that token, generates the downstream request itself, and forwards
+the token alongside so the downstream service can validate it independently — signature,
+issuer, algorithm, lifetime. That is what `AddDescopeJwtBearer(configuration)` already
+does, and it is the whole of the downstream story.
+
+So member context always arrives as a claim, and a claim is checked by validating the
+token it came in. There is no second copy to compare it against. That is a stronger
+position than any comparison: a value the client cannot supply is a value the client
+cannot tamper with.
+
+### If an endpoint ever does accept member context in a body
+
+Then two copies exist and they can disagree — while signature, issuer, audience and
+expiry all pass, because the token really is the caller's. Register the check:
 
 ```csharp
 builder.Services.AddDescopeClaimsPayloadCheck();
 ```
 
-have the request model say which values are member-scoped:
+have the request model declare which values are member-scoped:
 
 ```csharp
 public sealed record MemberInfoRequest(string? SubscriberId, string? PlanInformation)
@@ -84,23 +95,9 @@ It has to be requested by the endpoint rather than attached to the route: author
 middleware runs **before model binding**, so a route-attached policy would be evaluated
 while the body is still an unread stream.
 
-Unlike `AddDescopeMemberOwnership()` this needs no member database and no resolver — it
-compares two values that both arrived with the request — so it is safe in **downstream
-services as well as front doors**. A downstream service that assumes the BFF already
-checked is trusting a hop it cannot see.
-
-### Why it answers 401 and not 403
-
-By the letter of HTTP this is a 403: the caller authenticated fine and simply is not
-permitted. It is a **401** because of what each status makes the client do. A 401 makes
-the mobile app purge its session and return to sign-in; a 403 makes it show an error and
-carry on. A body contradicting the token means the app's own state is wrong about who it
-is, and carrying on with that state is the thing worth preventing.
-
-`AddDescopeMemberOwnership()` stays a **403** for the same reason inverted: asking for
-another member's ID card by route is an ordinary refusal, the session is fine, and
-signing the member out over it would be wrong. The two look alike and want opposite
-client behaviour.
+It needs no member database and no resolver — it compares two values that both arrived
+with the request — so unlike `AddDescopeMemberOwnership()` it is safe in a downstream
+service as well as a front door.
 
 ### What it will and will not refuse
 
@@ -118,13 +115,29 @@ Claim names are matched case-insensitively across `SubscriberID` / `subscriberId
 `subscriber_id` and `PlanInformation` / `planInformation` / `plan`, because the spelling
 is decided in the Descope JWT template rather than here.
 
+### Why it answers 401 and not 403
+
+By the letter of HTTP this is a 403: the caller authenticated fine and simply is not
+permitted. It is a **401** to match step 17 of the BFF Validation sequence diagram, and
+because of what each status makes a mobile client do — a 401 makes the app purge its
+session and return to sign-in, a 403 makes it show an error and carry on.
+
+On a service-to-service hop that reasoning does not transfer: a mismatch there means an
+upstream service is broken, not that the member's session is. `IsClaimsMismatch()` on the
+`AuthorizationResult` lets such a caller tell this failure apart from an ordinary denial
+and answer with its own status code.
+
+`AddDescopeMemberOwnership()` stays a **403** deliberately: asking for another member's
+ID card by route is an ordinary refusal, the session is fine, and signing the member out
+over it would be wrong.
+
 ## What each method does, and where it belongs
 
 | Method | Who calls it |
 | --- | --- |
 | `AddDescopeJwtBearer(configuration)` | every service accepting a member token |
 | `AddDescopeMemberOwnership()` | **front doors only** — needs an `IMemberIdentityResolver` |
-| `AddDescopeClaimsPayloadCheck()` | any service reading member context from a request body |
+| `AddDescopeClaimsPayloadCheck()` | nothing today — only if an endpoint starts accepting member context in a body |
 | `AddMemberTokenForwarding()` | front doors, per typed client calling our own services |
 | `RequireAuthenticatedUserByDefault()` | opt-in; read the warning below first |
 

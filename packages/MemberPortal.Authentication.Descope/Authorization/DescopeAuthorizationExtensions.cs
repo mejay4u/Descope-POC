@@ -58,8 +58,9 @@ public static class DescopeAuthorizationExtensions
     /// <remarks>
     /// <para>
     /// In the current design member context never travels in a body. Clients send only
-    /// the token; the BFF reads the claims and generates the downstream request from
-    /// them, forwarding the token so the downstream service can validate it for itself.
+    /// the token; the BFF reads the claims and builds the downstream request body from
+    /// them, forwarding the same token unchanged so the downstream service can validate
+    /// it for itself.
     /// Nothing therefore has two copies of the member context to compare, and calling
     /// this method changes nothing about how any existing endpoint behaves.
     /// </para>

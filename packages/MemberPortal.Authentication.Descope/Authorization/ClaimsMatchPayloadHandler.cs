@@ -10,9 +10,9 @@ namespace MemberPortal.Authentication.Descope;
 /// <para>
 /// <b>Nothing in the current design calls this.</b> Worth stating plainly so nobody
 /// goes looking for the caller. Clients send no member context — the token carries
-/// it. The BFF reads the claims and generates the downstream body itself, and
-/// forwards the token so the downstream service can validate it independently, not
-/// so it can compare the two. Every hop's member context therefore comes from a
+/// it. The BFF reads the claims and builds the downstream request body from them,
+/// and forwards the same token unchanged so the downstream service can validate it
+/// for itself — not so it can compare the two. Every hop's member context therefore comes from a
 /// token, and a token is checked by validating it, not by diffing it against a body.
 /// </para>
 /// <para>

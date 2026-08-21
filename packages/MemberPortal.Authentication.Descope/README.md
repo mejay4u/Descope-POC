@@ -53,9 +53,11 @@ can — then cross-member access is unrepresentable rather than merely prevented
 API below tempts anyone into wiring it up.
 
 Member context never travels in a request body. Clients send only the token. The BFF
-reads the claims off that token, generates the downstream request itself, and forwards
-the token alongside so the downstream service can validate it independently — signature,
-issuer, algorithm, lifetime. That is what `AddDescopeJwtBearer(configuration)` already
+reads the claims off that token, builds the downstream request **body** from them, and
+forwards **the same Descope token, unchanged**, so the downstream service can validate it
+for itself — signature, issuer, algorithm, lifetime. No token is minted, exchanged or
+re-signed anywhere along the way; `AddMemberTokenForwarding()` copies the inbound
+`Authorization` header verbatim. That is what `AddDescopeJwtBearer(configuration)` already
 does, and it is the whole of the downstream story.
 
 So member context always arrives as a claim, and a claim is checked by validating the

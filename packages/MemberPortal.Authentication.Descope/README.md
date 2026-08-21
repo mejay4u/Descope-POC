@@ -47,28 +47,21 @@ app.MapGet("/api/idcard/{memberId}", ...)
 Prefer routes that take the member from the token instead (`/api/idcard/me`) wherever you
 can — then cross-member access is unrepresentable rather than merely prevented.
 
-## Request bodies that name a member
+## Request bodies that name a member — step 16
 
-**Nothing in the current design needs this**, and it is worth saying why before the
-API below tempts anyone into wiring it up.
+The mobile app caches its member context after login. When it opens a profile or plan
+details screen it calls the BFF directly, sending that context in the body, with the
+Descope token in the `Authorization` header. The token carries the same values as
+claims.
 
-Member context never travels in a request body. Clients send only the token. The BFF
-reads the claims off that token, builds the downstream request **body** from them, and
-forwards **the same Descope token, unchanged**, so the downstream service can validate it
-for itself — signature, issuer, algorithm, lifetime. No token is minted, exchanged or
-re-signed anywhere along the way; `AddMemberTokenForwarding()` copies the inbound
-`Authorization` header verbatim. That is what `AddDescopeJwtBearer(configuration)` already
-does, and it is the whole of the downstream story.
+**Two copies, and only one of them is trustworthy.** A signed-in member who alters the
+cached mapping can ask for someone else's subscriber with a token that is genuinely
+theirs — so signature, issuer, audience and expiry all pass, and the gateway forwards
+the body without inspecting it. That is IDOR, and no amount of token validation catches
+it. The contradiction is visible only in the service holding both the deserialised body
+and the validated principal.
 
-So member context always arrives as a claim, and a claim is checked by validating the
-token it came in. There is no second copy to compare it against. That is a stronger
-position than any comparison: a value the client cannot supply is a value the client
-cannot tamper with.
-
-### If an endpoint ever does accept member context in a body
-
-Then two copies exist and they can disagree — while signature, issuer, audience and
-expiry all pass, because the token really is the caller's. Register the check:
+Register the check:
 
 ```csharp
 builder.Services.AddDescopeClaimsPayloadCheck();
@@ -97,9 +90,18 @@ It has to be requested by the endpoint rather than attached to the route: author
 middleware runs **before model binding**, so a route-attached policy would be evaluated
 while the body is still an unread stream.
 
-It needs no member database and no resolver — it compares two values that both arrived
-with the request — so unlike `AddDescopeMemberOwnership()` it is safe in a downstream
-service as well as a front door.
+It needs no member database and no resolver — both values arrived with the request — so
+unlike `AddDescopeMemberOwnership()` it is safe in a downstream service as well as a
+front door. A downstream service that assumes the BFF already checked is trusting a hop
+it cannot see.
+
+⚠️ **A stale cache looks identical to tampering.** The app's cached copy is only as
+current as its last login. If a value changes server-side — a plan change being the
+obvious one — the next request carries the old value, the token carries the new one, and
+this check refuses it. The member is signed out and re-caches on the way back in, so it
+self-heals, but it self-heals by ejecting them. Worth deciding per field whether a
+mismatch means tampering or staleness: a subscriber id is a stable identifier and a
+mismatch there is suspicious, while plan information is data that legitimately changes.
 
 ### What it will and will not refuse
 
@@ -139,7 +141,7 @@ over it would be wrong.
 | --- | --- |
 | `AddDescopeJwtBearer(configuration)` | every service accepting a member token |
 | `AddDescopeMemberOwnership()` | **front doors only** — needs an `IMemberIdentityResolver` |
-| `AddDescopeClaimsPayloadCheck()` | nothing today — only if an endpoint starts accepting member context in a body |
+| `AddDescopeClaimsPayloadCheck()` | any service reading member context from a request body |
 | `AddMemberTokenForwarding()` | front doors, per typed client calling our own services |
 | `RequireAuthenticatedUserByDefault()` | opt-in; read the warning below first |
 

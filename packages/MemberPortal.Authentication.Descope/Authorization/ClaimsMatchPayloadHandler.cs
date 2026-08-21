@@ -8,39 +8,38 @@ namespace MemberPortal.Authentication.Descope;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Nothing in the current design calls this.</b> Worth stating plainly so nobody
-/// goes looking for the caller. Clients send no member context — the token carries
-/// it. The BFF reads the claims and builds the downstream request body from them,
-/// and forwards the same token unchanged so the downstream service can validate it
-/// for itself — not so it can compare the two. Every hop's member context therefore comes from a
-/// token, and a token is checked by validating it, not by diffing it against a body.
+/// <b>What this catches that token validation cannot.</b> The mobile app caches its
+/// member context after login and sends it in the body when requesting a profile or
+/// plan details. If that body names a different subscriber than the token's claims,
+/// every signature check still passes — the token really is the caller's. The
+/// tampering is in the payload, which nothing upstream inspects: the gateway
+/// validates the token and forwards the body untouched.
 /// </para>
 /// <para>
-/// It exists for the shape that design does not currently have: a service that
-/// receives member context <i>in a request body</i> and holds a validated token for
-/// the same request. Then the two can disagree, and the disagreement is invisible to
-/// signature, issuer, audience and expiry — all of which pass. Should an endpoint
-/// ever accept a subscriber in a payload, this is the check it needs; until then the
-/// policy is registered only if a service asks for it with
-/// <c>AddDescopeClaimsPayloadCheck()</c>.
+/// So the comparison has to happen where both halves are in one place — the service
+/// holding the deserialised body and the validated principal. That is this handler,
+/// and it is the whole content of step 16 of the BFF Validation sequence.
 /// </para>
 /// <para>
 /// <b>It fails closed, and it fails loudly.</b> Unlike
 /// <see cref="MemberOwnsResourceHandler"/>, which denies by simply not succeeding,
 /// this one calls <see cref="AuthorizationHandlerContext.Fail(AuthorizationFailureReason)"/>
-/// with a marker, so no other handler can grant a request whose body contradicted
-/// its token. The marker is what lets the response say which kind of failure it was;
-/// see <see cref="DescopeAuthorizationResults"/>.
+/// with a marker. A mismatch is evidence of tampering rather than an ordinary "not
+/// allowed", so no later handler should be able to grant the request —
+/// <c>Fail</c> is what makes a denial final. The marker is what lets the response be
+/// a 401 rather than a 403; see <see cref="DescopeAuthorizationResults"/>.
 /// </para>
 /// <para>
 /// <b>Comparison is ordinal.</b> These are identifiers, not prose. A
 /// case-insensitive compare would let <c>SUB-1001</c> pass as <c>sub-1001</c>, which
-/// is exactly the near-miss this exists to notice.
+/// is exactly the near-miss this exists to refuse.
 /// </para>
 /// <para>
 /// <b>A token that asserts nothing cannot vouch for anything.</b> If the body names
 /// a subscriber and the token carries no subscriber claim, that is a denial, not a
-/// pass — the usual cause being a JWT template that never projected the claim.
+/// pass — the usual cause being a JWT template that never projected the claim, in
+/// which case every request is unverifiable and the service should say so rather
+/// than wave them all through.
 /// </para>
 /// <para>
 /// <b>No resource, no grant.</b> Requesting this policy without passing the request

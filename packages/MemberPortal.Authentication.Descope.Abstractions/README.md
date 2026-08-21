@@ -6,8 +6,7 @@ Three interfaces, no dependencies.
   `PlanInformation`, `IsAuthenticated`), with no reference to `HttpContext` or
   `ClaimsPrincipal`.
 - **`IMemberScopedRequest`** — a request body that names the member context it acts in,
-  so a service can refuse a body contradicting the token. Unused today: member context
-  travels in the token, never in a body.
+  so a service can refuse a body contradicting the token.
 - **`IMemberIdentityResolver`** — turns a Descope `sub` into a member id in your system.
 
 The line between the first and the last is worth keeping: `ICallerIdentity` reads what the

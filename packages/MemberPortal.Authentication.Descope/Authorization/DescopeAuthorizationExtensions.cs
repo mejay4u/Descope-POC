@@ -52,27 +52,23 @@ public static class DescopeAuthorizationExtensions
     }
 
     /// <summary>
-    /// Registers the claims/payload cross-check, for a service that receives member
-    /// context in a request body. <b>No service does today</b> — see the remarks.
+    /// Registers the claims/payload cross-check — step 16 of the BFF Validation
+    /// sequence. <b>Any service that reads member context out of a request body.</b>
     /// </summary>
     /// <remarks>
     /// <para>
-    /// In the current design member context never travels in a body. Clients send only
-    /// the token; the BFF reads the claims and builds the downstream request body from
-    /// them, forwarding the same token unchanged so the downstream service can validate
-    /// it for itself.
-    /// Nothing therefore has two copies of the member context to compare, and calling
-    /// this method changes nothing about how any existing endpoint behaves.
-    /// </para>
-    /// <para>
-    /// It is here for the endpoint that does eventually accept a subscriber or plan in
-    /// a payload. At that point body and token can disagree while signature, issuer,
-    /// audience and expiry all pass, and this is the only check that notices.
+    /// The mobile app caches its member context after login and sends it in the body
+    /// when asking for a profile or plan details. The token carries the same values as
+    /// claims. This check refuses the request when the two disagree, which is the only
+    /// way an altered payload is caught: the token is genuinely the caller's, so every
+    /// signature, issuer, audience and expiry check passes, and the gateway forwards
+    /// the body without looking at it.
     /// </para>
     /// <para>
     /// Unlike <see cref="AddDescopeMemberOwnership"/> it needs no member database and
     /// no resolver — it compares two values that both arrived with the request — so it
-    /// is safe in a downstream service as well as a front door.
+    /// is safe in a downstream service as well as a front door. A downstream service
+    /// that assumes the BFF already checked is trusting a hop it cannot see.
     /// </para>
     /// <para>
     /// Registering the policy does not apply it. The endpoint asks for it once it has

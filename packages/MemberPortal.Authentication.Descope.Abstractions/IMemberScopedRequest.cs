@@ -6,18 +6,19 @@ namespace MemberPortal.Authentication.Descope;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Unused by the current design, and deliberately so.</b> Clients send no member
-/// context — the token carries it. The BFF reads the claims and generates the
-/// downstream body from them, and the token travels alongside so the downstream
-/// service can validate it for itself. Member context therefore always arrives as a
-/// claim, and claims are checked by validating the token.
+/// The mobile app caches its member context after login and sends it back in the
+/// body when it asks for a profile or plan details. The same values are also claims
+/// in the token it presents. Two copies, one from a client and one signed by the
+/// identity provider — and the whole point of holding both is that only one of them
+/// is trustworthy.
 /// </para>
 /// <para>
-/// This interface is for the shape that design does not have today: a service handed
-/// member context <i>in a body</i> while holding a validated token for the same
-/// request. Those two can disagree, and nothing about signature, issuer, audience or
-/// expiry would notice. A request model implements this, and the endpoint asks
-/// <see cref="ClaimsMatchPayloadRequirement"/> to compare them.
+/// <b>The threat is IDOR.</b> A signed-in member alters the cached mapping and asks
+/// for someone else's subscriber. The token is genuinely theirs, so signature,
+/// issuer, audience and expiry all pass; the gateway validates it and forwards the
+/// body untouched. Nothing upstream is looking at the body. The contradiction is
+/// only visible in the service that deserialised it while holding the validated
+/// principal, which is where this check runs.
 /// </para>
 /// <para>
 /// <b>Null means "not supplied", and that passes.</b> A body naming no subscriber
